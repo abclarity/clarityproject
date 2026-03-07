@@ -927,10 +927,16 @@
         // Write to tracking sheets
         const batchRecords = [];
         Object.values(agg).forEach(({ funnelId, date, survey, surveyQuali }) => {
-          const d = new Date(date + 'T00:00:00');
+          // Parse date safely - event_date can be 'YYYY-MM-DD' or 'YYYY-MM-DDT...' timestamp
+          const dateStr = String(date).substring(0, 10);
+          const [year, monthStr, dayStr] = dateStr.split('-');
+          const yearNum = parseInt(year);
+          const monthNum = parseInt(monthStr) - 1; // 0-based
+          const dayNum = parseInt(dayStr);
+          if (!yearNum || isNaN(monthNum) || isNaN(dayNum)) return;
           batchRecords.push(
-            { funnelId, year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), fieldName: 'Survey', value: survey },
-            { funnelId, year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), fieldName: 'SurveyQuali', value: surveyQuali }
+            { funnelId, year: yearNum, month: monthNum, day: dayNum, fieldName: 'Survey', value: survey },
+            { funnelId, year: yearNum, month: monthNum, day: dayNum, fieldName: 'SurveyQuali', value: surveyQuali }
           );
         });
 
