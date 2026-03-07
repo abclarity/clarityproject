@@ -915,11 +915,12 @@
 
         if (error || !events || events.length === 0) return;
 
-        // Aggregate by funnel_id + date
+        // Aggregate by funnel_id + date (normalize timestamp to YYYY-MM-DD)
         const agg = {};
         events.forEach(ev => {
-          const key = `${ev.funnel_id}__${ev.event_date}`;
-          if (!agg[key]) agg[key] = { funnelId: ev.funnel_id, date: ev.event_date, survey: 0, surveyQuali: 0 };
+          const dateKey = String(ev.event_date).substring(0, 10);
+          const key = `${ev.funnel_id}__${dateKey}`;
+          if (!agg[key]) agg[key] = { funnelId: ev.funnel_id, date: dateKey, survey: 0, surveyQuali: 0 };
           agg[key].survey++;
           if (ev.event_type === 'surveyQuali') agg[key].surveyQuali++;
         });
