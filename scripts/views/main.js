@@ -1141,11 +1141,6 @@
       window.FacebookTrafficAPI.startAutoSyncScheduler();
     }
 
-    // Start Typeform Auto-Sync scheduler
-    if (window.TypeformAPI) {
-      window.TypeformAPI.startAutoSyncScheduler();
-      window.TypeformAPI.startSurveyTrackingSync();
-    }
 
     const last = localStorage.getItem("vsl_last_active");
 
