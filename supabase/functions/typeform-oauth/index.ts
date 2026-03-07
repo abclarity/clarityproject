@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
           </script>
         </body>
         </html>`,
-        { headers: { 'Content-Type': 'text/html' } }
+        { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
       );
     }
 
@@ -221,7 +221,7 @@ Deno.serve(async (req) => {
         </script>
       </body>
       </html>`,
-      { headers: { 'Content-Type': 'text/html' } }
+      { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
     );
 
   } catch (error) {
@@ -247,7 +247,7 @@ Deno.serve(async (req) => {
       </html>`,
       { 
         status: 500,
-        headers: { 'Content-Type': 'text/html' }
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
       }
     );
   }
