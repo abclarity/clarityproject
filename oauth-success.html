@@ -61,41 +61,43 @@
 
   <script>
     (function() {
-      // Parse URL parameters
       const params = new URLSearchParams(window.location.search);
-      const connectionId = params.get('connection_id');
-      const fbUserId = params.get('fb_user_id');
-      
-      console.log('OAuth Success Page:', { connectionId, fbUserId });
-      
-      // Display details
+      const type = params.get('type');
       const detailsEl = document.getElementById('details');
-      if (connectionId) {
-        detailsEl.innerHTML = `
-          <div>Connection ID: ${connectionId}</div>
-          <div>Facebook User: ${fbUserId}</div>
-        `;
-      }
-      
-      // Signal parent window
-      if (window.opener) {
-        console.log('Sending postMessage to opener window');
-        window.opener.postMessage({
-          type: 'facebook_oauth_complete',
-          success: true,
-          connection_id: connectionId,
-          fb_user_id: fbUserId
-        }, '*');
+
+      if (type === 'typeform') {
+        const email = params.get('email') || '';
+        document.title = 'Typeform Verbunden';
+        document.querySelector('h2').textContent = 'Typeform erfolgreich verbunden!';
+        document.querySelector('p').textContent = 'Deine Formulare werden jetzt synchronisiert...';
+        if (email) detailsEl.innerHTML = `<div>Konto: ${email}</div>`;
+
+        if (window.opener) {
+          window.opener.postMessage({ type: 'TYPEFORM_OAUTH_SUCCESS', email }, '*');
+        }
       } else {
-        console.warn('No opener window found');
+        // Facebook flow
+        const connectionId = params.get('connection_id');
+        const fbUserId = params.get('fb_user_id');
+        if (connectionId) {
+          detailsEl.innerHTML = `
+            <div>Connection ID: ${connectionId}</div>
+            <div>Facebook User: ${fbUserId}</div>
+          `;
+        }
+        if (window.opener) {
+          window.opener.postMessage({
+            type: 'facebook_oauth_complete',
+            success: true,
+            connection_id: connectionId,
+            fb_user_id: fbUserId
+          }, '*');
+        }
       }
-      
+
       // Auto-close after 2 seconds
       setTimeout(() => {
-        console.log('Attempting to close popup...');
         window.close();
-        
-        // Fallback message if window.close() doesn't work
         setTimeout(() => {
           const container = document.querySelector('.container');
           container.innerHTML = `

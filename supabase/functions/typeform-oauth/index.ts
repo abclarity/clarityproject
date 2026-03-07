@@ -73,8 +73,16 @@ Deno.serve(async (req) => {
       throw new Error('Missing state parameter (user_id)');
     }
 
-    // Extract user_id from state
-    const userId = state;
+    // Extract user_id and returnUrl from state
+    let userId: string;
+    let returnUrl: string | null = null;
+    try {
+      const stateData = JSON.parse(state);
+      userId = stateData.userId;
+      returnUrl = stateData.returnUrl || null;
+    } catch {
+      userId = state; // backwards compat: state is just userId
+    }
 
     // Step 1: Exchange code for access token
     console.log('Exchanging code for access token...');
@@ -162,65 +170,22 @@ Deno.serve(async (req) => {
 
     console.log('✅ Typeform connection saved successfully');
 
-    // Step 5: Return success page with auto-close
+    // Step 5: Redirect to success page (avoids browser HTML rendering issues)
+    if (returnUrl) {
+      const successUrl = new URL(returnUrl);
+      successUrl.searchParams.set('type', 'typeform');
+      successUrl.searchParams.set('email', meData.email);
+      return Response.redirect(successUrl.toString(), 302);
+    }
+
+    // Fallback if no returnUrl in state
     return new Response(
-      `<!DOCTYPE html>
-      <html>
-      <head>
-        <title>Typeform Verbunden</title>
-        <style>
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-          }
-          .container {
-            text-align: center;
-            background: rgba(255, 255, 255, 0.1);
-            padding: 3rem;
-            border-radius: 1rem;
-            backdrop-filter: blur(10px);
-          }
-          .checkmark {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-            animation: scale 0.5s ease-in-out;
-          }
-          @keyframes scale {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.2); }
-          }
-          h1 { margin: 0 0 0.5rem 0; font-size: 1.5rem; }
-          p { margin: 0; opacity: 0.9; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="checkmark">✓</div>
-          <h1>Typeform erfolgreich verbunden!</h1>
-          <p>Konto: ${meData.email}</p>
-          <p style="margin-top: 1rem; font-size: 0.9rem;">Dieses Fenster schließt sich automatisch...</p>
-        </div>
-        <script>
-          // Notify parent window
-          if (window.opener) {
-            window.opener.postMessage({
-              type: 'TYPEFORM_OAUTH_SUCCESS',
-              email: '${meData.email}'
-            }, '*');
-          }
-          // Auto-close after 2 seconds
-          setTimeout(() => {
-            window.close();
-          }, 2000);
-        </script>
-      </body>
-      </html>`,
+      `<!DOCTYPE html><html><head><title>Typeform Verbunden</title></head>
+      <body><p>Typeform erfolgreich verbunden! Dieses Fenster kann geschlossen werden.</p>
+      <script>
+        if (window.opener) window.opener.postMessage({ type: 'TYPEFORM_OAUTH_SUCCESS', email: '${meData.email}' }, '*');
+        setTimeout(() => window.close(), 2000);
+      </script></body></html>`,
       { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
     );
 
