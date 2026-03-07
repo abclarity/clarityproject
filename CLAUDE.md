@@ -431,22 +431,50 @@ Dann: `npm run test:e2e`
 
 ## Aktuelle Prioritaeten (Stand Maerz 2026)
 
-**MVP fehlt noch:**
-1. Datenpool-View UI – Events werden gesammelt aber nicht angezeigt
-2. Projections-Tab – Goal-Setting, KPI-Breakdown, Live-Fortschritt
-3. Calendly-Integration – Setting-Bookings automatisch erfassen
+### MVP-Ziel (Phase 1)
+Unabhaengig vom technischen Setup des Users soll Clarity automatisch Daten fuer alle
+Conversion-Steps erhalten und die Tracking Sheets befuellen:
+- **Leads** (Opt-ins)
+- **Surveys** (Umfragen abgeschlossen / qualifiziert)
+- **Call Bookings** (Setting-Termine gebucht)
+- **Call Show-Ups** (Setting-Calls stattgefunden)
+- **Units Sold** (Verkaufsabschluesse)
+- **Cash In** (tatsaechlicher Zahlungseingang)
+
+### Offen (nach Prioritaet):
+
+**1. Datenpool-View UI**
+- Events werden in Supabase gesammelt, aber es gibt noch keine UI zum Anzeigen/Verwalten
+
+**2. Datenquellen-Anbindungen (Phase 1 Kern)**
+- **Surveys:** Typeform (teilweise – hat noch Bugs), andere Survey-Tools (Tally, etc.)
+- **Call Bookings:** Calendly, GoHighLevel (GHL), CRMs, andere Booking-Tools
+- **Sales/Revenue:** Stripe Webhooks, Digistore, Ablefy, Whop oder manuelle Eingabe als Fallback oder Upload
+- **CRM:** Close.io, GoHighLevel, HubSpot (spaeter)
+- **Ads:** Facebook Ads (teilweise – Optimierungen noetig), Google Ads (noch nicht)
+
+**3. Projections-Tab**
+- Goal-Setting (Ziele pro KPI pro Monat)
+- KPI-Breakdown (Rueckwaertsrechnung: Wie viele Leads brauche ich fuer X Units?)
+- Live-Fortschritt (Ist vs. Soll)
+- Bottleneck-Detection
 
 **Technische Schulden (klein):**
 - `cell-selection.js` ist zu gross (4 Funktionen in einer Datei)
 - KPI-Berechnung leicht dupliziert zwischen month-view und year-view
+- Facebook Ads Sync braucht Optimierungen (Fehlerbehandlung, Re-Auth-Flow)
+- Typeform-Integration hat noch offene Bugs
 
 ---
 
 ## Produktvision (Zusammenfassung)
 
 Clarity ist ein "Operating System fuer High-Ticket Coaches & Agencies".
+
+**Kernversprechen:** Egal welche Software der User nutzt (fuer Leads, fuer Surveys, fuer Bookings, usw) – Clarity kriegt die Daten und befuellt automatisch die richtigen Tracking Sheets getrennt nach richtiger Source und Funnel.
+
 Aktuelle Phasen:
-- **Jetzt (Phase 1):** Datenpool-Automation (Calendly, GHL, Stripe-Webhooks)
+- **Jetzt (Phase 1):** Vollstaendige Datenpool-Automation – alle Conversion-Steps automatisch erfassen (Leads, Survey, Booking, Show-Up, Unit, Cash)
 - **Phase 2:** Projections-Tab (Goal-Setting, KPI-Breakdown, Bottleneck-Detection)
 - **Phase 3:** Call Intelligence (Transkripte, Setter/Closer-Performance)
 - **Phase 4:** Scale It (AI-Optimierung, Ad-Copy-Generator)
