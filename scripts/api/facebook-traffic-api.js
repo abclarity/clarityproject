@@ -656,6 +656,9 @@
         }
 
         // Sync insights for all enabled accounts
+        // Fetch from start of current month (minimum), so no day is missing
+        const today = new Date();
+        const daysBackForSync = Math.max(today.getDate() + 1, 7); // at least 7 days, or enough to cover month start
         const insightsResponse = await fetch(
           `${window.SupabaseClient.supabaseUrl}/functions/v1/facebook-sync-insights`,
           {
@@ -664,10 +667,7 @@
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-              accountIds: enabledAccounts.map(acc => acc.ad_account_id),
-              daysBack: 90
-            })
+            body: JSON.stringify({ days_back: daysBackForSync })
           }
         );
 
@@ -686,6 +686,10 @@
         if (window.Toast) {
           window.Toast.success(`✅ ${enabledAccounts.length} Ad Account${enabledAccounts.length > 1 ? 's' : ''} erfolgreich synchronisiert!`);
         }
+
+        // Also push fetched data into tracking sheets
+        const monthsBack = Math.ceil(daysBackForSync / 30) + 1;
+        await this.syncToTrackingSheets(monthsBack, true);
 
         // Refresh view
         await this.render();
@@ -2211,7 +2215,30 @@
           await this.loadData();
         }
         
-        // Convert days to months for syncToTrackingSheets
+        // Step 1: Fetch missing days from Facebook API via Edge Function
+        console.log(`📡 Fetching ${daysToSync} days from Facebook API...`);
+        const syncSession = await window.SupabaseClient.auth.getSession();
+        const accessToken = syncSession?.data?.session?.access_token;
+        const syncResponse = await fetch(
+          `${window.SupabaseClient.supabaseUrl}/functions/v1/facebook-sync-insights`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ days_back: daysToSync })
+          }
+        );
+        if (!syncResponse.ok) {
+          const errText = await syncResponse.text();
+          console.error('❌ Auto-Sync Edge Function error:', errText);
+          throw new Error('Facebook API Sync fehlgeschlagen');
+        }
+        const syncResult = await syncResponse.json();
+        console.log(`✅ Edge Function: ${syncResult.total_inserted} Einträge geholt`);
+
+        // Step 2: Write fetched data into tracking sheets
         const monthsBack = Math.ceil(daysToSync / 30);
         await this.syncToTrackingSheets(monthsBack, true);
 
