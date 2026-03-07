@@ -16,6 +16,25 @@ Sie enthaelt alle notwendigen Informationen um effizient und korrekt an Clarity 
 
 ---
 
+## GitHub (Backup & Versionierung)
+
+```bash
+# Aenderungen auf GitHub sichern (manuell nach jeder Session)
+git add .
+git commit -m "Kurze Beschreibung was geaendert wurde"
+git push
+
+# Status pruefen (was ist noch nicht committed?)
+git status
+```
+
+**Wichtig:** GitHub synchronisiert NICHT automatisch. Nach jeder Arbeits-Session
+oder vor groesseren Aenderungen manuell committen und pushen.
+- Remote: https://github.com/abclarity/clarityproject
+- Branch: main
+
+---
+
 ## Lokale Entwicklung
 
 ```bash
