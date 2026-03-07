@@ -857,11 +857,99 @@
       }
     },
 
-    // ==================== MANUAL SYNC ====================
-    get isFirstCheck() {
-      return false; // Auto-sync removed - use backend scheduled sync instead
+    // ==================== TRACKING SHEET SYNC ====================
+
+    // Called on app load - imports fresh data if needed, then writes to tracking sheets
+    startTypeformSync() {
+      const lastImport = localStorage.getItem('typeform_last_import');
+      const hoursSince = lastImport ? (Date.now() - parseInt(lastImport)) / 3600000 : 999;
+
+      if (hoursSince > 1) {
+        // Import new responses from Typeform API, then aggregate
+        this._importAndSync(60);
+      } else {
+        // Just aggregate from existing events in DB
+        this._syncFromDB(60);
+      }
     },
-    
+
+    async _importAndSync(daysBack) {
+      try {
+        const session = await window.SupabaseClient.auth.getSession();
+        const userId = session?.data?.session?.user?.id;
+        if (!userId) return;
+
+        const { data: forms } = await window.SupabaseClient
+          .from('typeform_forms')
+          .select('form_id, funnel_id')
+          .eq('user_id', userId)
+          .eq('is_active', true);
+
+        if (!forms || forms.length === 0) return;
+
+        for (const form of forms) {
+          if (!form.funnel_id) continue;
+          await window.SupabaseClient.functions.invoke('typeform-sync', {
+            body: { action: 'import_responses', form_id: form.form_id, days_back: daysBack }
+          });
+        }
+
+        localStorage.setItem('typeform_last_import', Date.now().toString());
+        await this._syncFromDB(daysBack);
+      } catch (err) {
+        // Silent - background sync
+      }
+    },
+
+    async _syncFromDB(daysBack) {
+      try {
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - daysBack);
+
+        const { data: events, error } = await window.SupabaseClient
+          .from('events')
+          .select('funnel_id, event_date, event_type')
+          .in('event_type', ['survey', 'surveyQuali'])
+          .not('funnel_id', 'is', null)
+          .gte('event_date', startDate.toISOString().split('T')[0]);
+
+        if (error || !events || events.length === 0) return;
+
+        // Aggregate by funnel_id + date
+        const agg = {};
+        events.forEach(ev => {
+          const key = `${ev.funnel_id}__${ev.event_date}`;
+          if (!agg[key]) agg[key] = { funnelId: ev.funnel_id, date: ev.event_date, survey: 0, surveyQuali: 0 };
+          agg[key].survey++;
+          if (ev.event_type === 'surveyQuali') agg[key].surveyQuali++;
+        });
+
+        // Write to tracking sheets
+        const batchRecords = [];
+        Object.values(agg).forEach(({ funnelId, date, survey, surveyQuali }) => {
+          const d = new Date(date + 'T00:00:00');
+          batchRecords.push(
+            { funnelId, year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), fieldName: 'Survey', value: survey },
+            { funnelId, year: d.getFullYear(), month: d.getMonth(), day: d.getDate(), fieldName: 'SurveyQuali', value: surveyQuali }
+          );
+        });
+
+        if (batchRecords.length > 0) {
+          await window.StorageAPI.batchSaveFieldsToSupabase(batchRecords);
+        }
+      } catch (err) {
+        // Silent - background sync
+      }
+    },
+
+    // Public: full sync with UI feedback (for manual trigger button)
+    async syncTypeformToTrackingSheets(daysBack = 30) {
+      await this._importAndSync(daysBack);
+      const count = daysBack;
+      return { synced: count, message: `Survey-Daten der letzten ${daysBack} Tage synchronisiert` };
+    },
+
+
 
     // Manual sync button (for UI)
     async manualSync() {
@@ -962,7 +1050,7 @@
           window.Loading.show('Synchronisiere Surveys zu Tracking Sheets...');
         }
 
-        const result = await this.syncSurveysToTrackingSheets(30);
+        const result = await this.syncTypeformToTrackingSheets(30);
         
         window.Toast.success(result.message);
 

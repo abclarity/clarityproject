@@ -1141,6 +1141,10 @@
       window.FacebookTrafficAPI.startAutoSyncScheduler();
     }
 
+    // Typeform: Surveys ins Tracking Sheet synchronisieren
+    if (window.TypeformAPI) {
+      window.TypeformAPI.startTypeformSync();
+    }
 
     const last = localStorage.getItem("vsl_last_active");
 
