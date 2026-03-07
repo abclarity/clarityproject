@@ -73,16 +73,11 @@ Deno.serve(async (req) => {
       throw new Error('Missing state parameter (user_id)');
     }
 
-    // Extract user_id and returnUrl from state
-    let userId: string;
-    let returnUrl: string | null = null;
-    try {
-      const stateData = JSON.parse(state);
-      userId = stateData.userId;
-      returnUrl = stateData.returnUrl || null;
-    } catch {
-      userId = state; // backwards compat: state is just userId
-    }
+    // Extract user_id from state
+    const userId = state;
+    // App URL from env variable (set in Supabase dashboard)
+    const appUrl = Deno.env.get('CLARITY_APP_URL');
+    const returnUrl = appUrl ? `${appUrl}/oauth-success.html` : null;
 
     // Step 1: Exchange code for access token
     console.log('Exchanging code for access token...');

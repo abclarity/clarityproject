@@ -87,7 +87,7 @@
 
         // Build OAuth URL
         const redirectUri = `${window.SupabaseClient.supabaseUrl}/functions/v1/typeform-oauth`;
-        const state = JSON.stringify({ userId, returnUrl: window.location.origin + '/oauth-success.html' });
+        const state = userId;
 
         const authUrl = new URL(TYPEFORM_AUTH_URL);
         authUrl.searchParams.set('client_id', TYPEFORM_CLIENT_ID);
