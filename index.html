@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clarity - Funnel Tracking</title>
+  <link rel="stylesheet" href="styles/main.css" />
+
+  <!-- 🔥 Papa Parse (CSV-Parser) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+  <!-- Supabase Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+  <!-- Header -->
+  <header id="app-header"></header>
+
+  <!-- Kontextmenü für Monate -->
+  <div id="contextMenu" class="context-menu">
+    <button id="resetMonthBtn">Monat zurücksetzen</button>
+    <button id="deleteMonthBtn">Monat löschen</button>
+  </div>
+
+  <!-- 🔥 NEU: Kontextmenü für Funnels -->
+  <div id="funnelContextMenu" class="context-menu">
+    <button id="renameFunnelBtn">Umbenennen</button>
+    <button id="changeColorBtn">Farbe ändern</button>
+    <button id="deleteFunnelBtn">Funnel löschen</button>
+  </div>
+
+  <!-- Hauptbereich -->
+
+  <!-- Hauptbereich -->
+  <main id="app"></main>
+
+  <!-- Tabs (unten) -->
+  <footer id="tabs" class="tabbar"></footer>
+
+  <!-- Modal: Neuer Monat -->
+  <div id="monthModal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Neuen Monat hinzufügen</h2>
+      <form id="monthForm">
+        <label>
+          <input type="radio" name="mode" value="next" checked />
+          Nächster Monat: <span id="suggestedMonth">Dezember 2025</span>
+        </label>
+        <br />
+        <label>
+          <input type="radio" name="mode" value="custom" />
+          Anderen Monat wählen:
+        </label>
+        <div class="custom-fields hidden">
+          <label>Jahr:
+            <input type="number" id="yearInput" value="2025" min="2000" max="2100" />
+          </label>
+          <label>Monat:
+            <select id="monthInput">
+              <option value="0">Januar</option>
+              <option value="1">Februar</option>
+              <option value="2">März</option>
+              <option value="3">April</option>
+              <option value="4">Mai</option>
+              <option value="5">Juni</option>
+              <option value="6">Juli</option>
+              <option value="7">August</option>
+              <option value="8">September</option>
+              <option value="9">Oktober</option>
+              <option value="10">November</option>
+              <option value="11">Dezember</option>
+            </select>
+          </label>
+        </div>
+        <div class="buttons">
+          <button type="button" id="cancelModal">Abbrechen</button>
+          <button type="submit" id="createMonth">Erstellen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Neuer Funnel -->
+  <div id="funnelModal" class="modal hidden">
+    <div class="modal-content wizard-modal">
+
+      <!-- Toggle: Wizard / Presets -->
+      <div class="wizard-toggle">
+        <button id="wizardModeBtn" class="toggle-btn active">🧙 Funnel-Wizard</button>
+        <button id="presetModeBtn" class="toggle-btn">⚡ Schnell-Auswahl</button>
+      </div>
+
+      <!-- WIZARD MODE -->
+      <div id="wizardMode" class="wizard-container">
+
+        <!-- Progress Dots -->
+        <div class="wizard-progress" id="wizardProgress">
+          <span class="dot active"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+
+        <!-- Step 1: Traffic -->
+        <div class="wizard-step active" data-step="1">
+          <h2>Woher kommt dein Traffic?</h2>
+          <div class="wizard-options">
+            <label class="wizard-option">
+              <input type="radio" name="traffic" value="paid-ads" />
+              <div class="option-card">
+                <div class="option-icon">📢</div>
+                <div class="option-title">Paid Ads</div>
+                <div class="option-desc">Facebook, Google, TikTok... </div>
+              </div>
+            </label>
+            <label class="wizard-option">
+              <input type="radio" name="traffic" value="organic" />
+              <div class="option-card">
+                <div class="option-icon">🌱</div>
+                <div class="option-title">Organic</div>
+                <div class="option-desc">SEO, Social Media, YouTube...</div>
+              </div>
+            </label>
+            <label class="wizard-option">
+              <input type="radio" name="traffic" value="cold-email" />
+              <div class="option-card">
+                <div class="option-icon">📧</div>
+                <div class="option-title">Cold Email</div>
+                <div class="option-desc">Outbound Email Campaigns</div>
+              </div>
+            </label>
+            <label class="wizard-option">
+              <input type="radio" name="traffic" value="cold-calls" />
+              <div class="option-card">
+                <div class="option-icon">📞</div>
+                <div class="option-title">Cold Calls</div>
+                <div class="option-desc">Outbound Phone Calls</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Step 1B: Cold Calls Special -->
+        <div class="wizard-step" data-step="1b">
+          <h2>Buchst du direkt ein Gespräch oder schickst du den Prospect auf eine Landingpage? </h2>
+          <div class="wizard-options">
+            <label class="wizard-option">
+              <input type="radio" name="coldcalls-flow" value="direct" />
+              <div class="option-card">
+                <div class="option-icon">📞</div>
+                <div class="option-title">Gespräch direkt buchen</div>
+                <div class="option-desc">Im Call wird direkt ein Termin vereinbart</div>
+              </div>
+            </label>
+            <label class="wizard-option">
+              <input type="radio" name="coldcalls-flow" value="landingpage" />
+              <div class="option-card">
+                <div class="option-icon">🌐</div>
+                <div class="option-title">Auf Landingpage schicken</div>
+                <div class="option-desc">Prospect macht alleine weiter</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Step 2: VSL?   -->
+        <div class="wizard-step" data-step="2">
+          <h2>Bewirbst du ein VSL Video? </h2>
+          <div class="wizard-options">
+            <label class="wizard-option">
+              <input type="radio" name="has-vsl" value="yes" />
+              <div class="option-card">
+                <div class="option-icon">🎥</div>
+                <div class="option-title">Ja</div>
+                <div class="option-desc">Ich bewerbe ein VSL Video</div>
+              </div>
+            </label>
+            <label class="wizard-option">
+              <input type="radio" name="has-vsl" value="no" />
+              <div class="option-card">
+                <div class="option-icon">❌</div>
+                <div class="option-title">Nein</div>
+                <div class="option-desc">Es gibt kein Video</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Step 2B: No VSL → Next Step -->
+        <div class="wizard-step" data-step="2b">
+          <h2>Was ist der nächste Schritt auf der Landingpage?</h2>
+          <div class="wizard-options">
+            <label class="wizard-option">
+              <input type="radio" name="no-vsl-next" value="survey" />
+              <div class="option-card">
+                <div class="option-icon">📋</div>
+                <div class="option-title">Fragebogen ausfüllen</div>
+                <div class="option-desc">Prospect beantwortet Fragen</div>
+              </div>
+            </label>
+            <label class="wizard-option">
+              <input type="radio" name="no-vsl-next" value="booking" />
+              <div class="option-card">
+                <div class="option-icon">📅</div>
+                <div class="option-title">Gespräch direkt buchen</div>
+                <div class="option-desc">Kein Fragebogen, direkt zum Booking</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Step 3: Opt-in?   -->
+        <div class="wizard-step" data-step="3">
+          <h2>Gibt es auf der Landingpage ein Opt-in?</h2>
+          <div class="wizard-options">
+            <label class="wizard-option">
+              <input type="radio" name="optin" value="yes" />
+              <div class="option-card">
+                <div class="option-icon">📧</div>
+                <div class="option-title">Ja, es gibt einen Opt-in</div>
+                <div class="option-desc">Das Video wird erst nach dem Opt-in freigeschalten</div>
+              </div>
+            </label>
+            <label class="wizard-option">
+              <input type="radio" name="optin" value="no" />
+              <div class="option-card">
+                <div class="option-icon">▶️</div>
+                <div class="option-title">Nein, es geht direkt zum VSL</div>
+                <div class="option-desc">Kein Opt-in, das Video ist direkt auf der Landingpage zu sehen</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Step 3B: After VSL -->
+        <div class="wizard-step" data-step="3b">
+          <h2 id="afterVslQuestion">Was passiert, nachdem dein Prospect das Video gesehen hat?</h2>
+          <div class="wizard-options">
+            <label class="wizard-option">
+              <input type="radio" name="after-vsl" value="survey" />
+              <div class="option-card">
+                <div class="option-icon">📋</div>
+                <div class="option-title">Er füllt einen Fragebogen aus</div>
+              </div>
+            </label>
+            <label class="wizard-option">
+              <input type="radio" name="after-vsl" value="booking" />
+              <div class="option-card">
+                <div class="option-icon">📅</div>
+                <div class="option-title">Er bucht sich gleich sein Erstgespräch</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Step 4: Survey Qualification -->
+        <div class="wizard-step" data-step="4">
+          <h2>Werden Prospects im Fragebogen aussortiert?</h2>
+          <div class="wizard-options">
+            <label class="wizard-option">
+              <input type="radio" name="survey-quali" value="yes" />
+              <div class="option-card">
+                <div class="option-icon">✅</div>
+                <div class="option-title">Ja</div>
+                <div class="option-desc">Nur qualifizierte Leads können einen Call buchen</div>
+              </div>
+            </label>
+            <label class="wizard-option">
+              <input type="radio" name="survey-quali" value="no" />
+              <div class="option-card">
+                <div class="option-icon">➡️</div>
+                <div class="option-title">Nein</div>
+                <div class="option-desc">Jeder kann einen Call buchen</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Step 5: Call Booking -->
+        <div class="wizard-step" data-step="5">
+          <h2>Welcher Call wird zuerst gebucht?</h2>
+          <div class="wizard-options">
+            <label class="wizard-option">
+              <input type="radio" name="close-type" value="1-call" />
+              <div class="option-card">
+                <div class="option-icon">1️⃣</div>
+                <div class="option-title">Nur Closing Call</div>
+                <div class="option-desc">1-Call Close</div>
+              </div>
+            </label>
+            <label class="wizard-option">
+              <input type="radio" name="close-type" value="2-call" />
+              <div class="option-card">
+                <div class="option-icon">2️⃣</div>
+                <div class="option-title">Erst Setting Call → dann Closing Call</div>
+                <div class="option-desc">2-Call Close</div>
+              </div>
+            </label>
+          </div>
+          <p class="wizard-hint">💡 <strong>Tipp:</strong> Wenn dein Prospect einen Closing Call bucht (auch wenn du ihn
+            vor dem Termin anrufst, um zu setten), wähle <strong>1-Call Close</strong>. Es wird kein Setting Call aktiv
+            gebucht.</p>
+        </div>
+
+        <!-- Step 6: Name & Color -->
+        <div class="wizard-step" data-step="6">
+          <h2>Fast fertig! Gib deinem Funnel einen Namen. </h2>
+          <label style="display: block; margin-bottom: 16px;">
+            Name:
+            <input type="text" id="wizardFunnelName" placeholder="z.B. Facebook Ads VSL"
+              style="width: 100%; margin-top: 8px; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px;" />
+          </label>
+          <label style="display: block; margin-top: 16px;">
+            Farbe:
+          </label>
+          <div class="color-picker" id="wizardColorPicker">
+            <div class="color-option" data-color="#1877f2" style="background: #1877f2;"></div>
+            <div class="color-option" data-color="#ff0000" style="background: #ff0000;"></div>
+            <div class="color-option" data-color="#00d26a" style="background: #00d26a;"></div>
+            <div class="color-option" data-color="#ff6b00" style="background: #ff6b00;"></div>
+            <div class="color-option active" data-color="#9146ff" style="background: #9146ff;"></div>
+            <div class="color-option" data-color="#0088cc" style="background: #0088cc;"></div>
+            <div class="color-option" data-color="#25d366" style="background: #25d366;"></div>
+            <div class="color-option" data-color="#333333" style="background: #333333;"></div>
+          </div>
+        </div>
+
+        <!-- Step 7: Summary -->
+        <div class="wizard-step" data-step="7">
+          <h2>✅ Dein Funnel ist bereit!</h2>
+          <div class="wizard-summary">
+            <h3 id="summaryFunnelName">Facebook Ads VSL</h3>
+            <div class="summary-item">
+              <span class="summary-label">🔹 Traffic:</span>
+              <span id="summaryTraffic">Paid Ads</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-label">🔹 Funnel:</span>
+              <span id="summaryFunnel">Classic VSL</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-label">🔹 Qualifikation:</span>
+              <span id="summaryQuali">Qualified Survey</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-label">🔹 Close:</span>
+              <span id="summaryClose">1-Call Close</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="wizard-nav">
+          <div class="wizard-nav-left">
+            <button id="wizardBack" class="wizard-btn-secondary" style="display: none;">← Zurück</button>
+          </div>
+          <div class="wizard-nav-right">
+            <button id="wizardNext" class="wizard-btn-primary" disabled>Weiter →</button>
+            <button id="wizardCreate" class="wizard-btn-primary" style="display: none;">Funnel erstellen ✓</button>
+            <button id="wizardCancel" class="wizard-btn-cancel">Abbrechen</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- PRESET MODE (alter Code bleibt!) -->
+      <div id="presetMode" class="preset-container hidden">
+        <h2>Neuen Funnel erstellen</h2>
+        <form id="funnelForm">
+          <label>
+            Name:
+            <input type="text" id="funnelNameInput" placeholder="z.B.  TikTok Ads VSL" required />
+          </label>
+
+          <!-- Template & Traffic Row -->
+          <div class="template-row">
+            <label style="display: block; margin-bottom: 16px;">
+              Template:
+              <select id="templateSelect"
+                style="width: 100%; margin-top: 8px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px;">
+                <!-- wird dynamisch befüllt -->
+              </select>
+            </label>
+
+            <label style="display: block; margin-bottom: 16px;">
+              Traffic-Quelle:
+            </label>
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+              <label style="display: flex; align-items: center;">
+                <input type="radio" name="traffic" value="paid-ads" checked style="margin-right: 8px;" />
+                Paid Ads
+              </label>
+              <label style="display: flex; align-items: center;">
+                <input type="radio" name="traffic" value="cold-email" style="margin-right: 8px;" />
+                Cold Email
+              </label>
+              <label style="display: flex; align-items: center;">
+                <input type="radio" name="traffic" value="cold-calls" style="margin-right: 8px;" />
+                Cold Calls
+              </label>
+              <label style="display: flex; align-items: center;">
+                <input type="radio" name="traffic" value="organic" style="margin-right: 8px;" />
+                Organic
+              </label>
+            </div>
+          </div>
+
+          <label style="margin-top: 16px; display: block;">
+            Farbe:
+          </label>
+          <div class="color-picker">
+            <div class="color-option" data-color="#1877f2" style="background: #1877f2;"></div>
+            <div class="color-option" data-color="#ff0000" style="background: #ff0000;"></div>
+            <div class="color-option" data-color="#00d26a" style="background: #00d26a;"></div>
+            <div class="color-option" data-color="#ff6b00" style="background: #ff6b00;"></div>
+            <div class="color-option active" data-color="#9146ff" style="background: #9146ff;"></div>
+            <div class="color-option" data-color="#0088cc" style="background: #0088cc;"></div>
+            <div class="color-option" data-color="#25d366" style="background: #25d366;"></div>
+            <div class="color-option" data-color="#333333" style="background: #333333;"></div>
+          </div>
+
+          <div class="buttons">
+            <button type="button" id="cancelFunnelModal">Abbrechen</button>
+            <button type="submit" id="createFunnel">Erstellen</button>
+          </div>
+        </form>
+      </div>
+
+    </div>
+  </div>
+  </div>
+
+  <!-- Modal: Funnel umbenennen -->
+  <div id="renameFunnelModal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Funnel umbenennen</h2>
+      <form id="renameForm">
+        <label>
+          Neuer Name:
+          <input type="text" id="renameInput" placeholder="z.B. TikTok Ads" required />
+        </label>
+
+        <div class="buttons">
+          <button type="button" id="cancelRename">Abbrechen</button>
+          <button type="submit" id="confirmRename">Umbenennen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Farbe ändern -->
+  <div id="changeColorModal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Farbe ändern</h2>
+      <form id="colorForm">
+        <label style="margin-top: 16px; display: block;">
+          Neue Farbe:
+        </label>
+        <div class="color-picker" id="colorPickerEdit">
+          <div class="color-option" data-color="#1877f2" style="background: #1877f2;"></div>
+          <div class="color-option" data-color="#ff0000" style="background: #ff0000;"></div>
+          <div class="color-option" data-color="#00d26a" style="background: #00d26a;"></div>
+          <div class="color-option" data-color="#ff6b00" style="background: #ff6b00;"></div>
+          <div class="color-option" data-color="#9146ff" style="background: #9146ff;"></div>
+          <div class="color-option" data-color="#0088cc" style="background: #0088cc;"></div>
+          <div class="color-option" data-color="#25d366" style="background: #25d366;"></div>
+          <div class="color-option" data-color="#333333" style="background: #333333;"></div>
+        </div>
+
+        <div class="buttons">
+          <button type="button" id="cancelColor">Abbrechen</button>
+          <button type="submit" id="confirmColor">Farbe ändern</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Funnel löschen (Bestätigung) -->
+  <div id="deleteFunnelModal" class="modal hidden">
+    <div class="modal-content delete-modal">
+      <h2>⚠️ Funnel löschen? </h2>
+      <p id="deleteFunnelText">Möchtest du wirklich "<strong id="deleteFunnelName"></strong>" löschen?</p>
+      <p class="warning-text">⚠️ Alle Monate und Daten dieses Funnels werden unwiderruflich gelöscht! </p>
+
+      <div class="buttons">
+        <button type="button" id="cancelDeleteFunnel" class="btn-secondary">Abbrechen</button>
+        <button type="button" id="confirmDeleteFunnel" class="btn-danger">Löschen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: CSV-Import -->
+  <div id="importModal" class="modal hidden">
+    <div class="modal-content import-modal">
+
+      <!-- Step 1: Datei + Monat wählen -->
+      <div id="importStep1" class="import-step">
+        <h2>📤 Daten importieren</h2>
+
+        <p style="margin-bottom: 16px;">
+          <strong>Funnel:</strong> <span id="importFunnelName" style="color: #1877f2;"></span>
+        </p>
+
+        <!-- 🔥 CSV ZUERST -->
+        <label style="display: block; margin-bottom: 16px;">
+          📁 CSV-Datei:
+          <button type="button" id="selectCsvBtn" class="btn-secondary" style="margin-top: 8px; width: 100%;">
+            Datei auswählen
+          </button>
+          <span id="selectedFileName"
+            style="display: block; margin-top: 8px; font-size: 13px; color: #666; font-style: italic;"></span>
+        </label>
+
+        <!-- 🔥 MONAT DANACH (initial versteckt) -->
+        <div id="monthSelectWrapper" style="display: none; margin-bottom: 16px;">
+          <label style="display: block;">
+            📅 Monat auswählen:
+            <select id="importMonthSelect" style="width: 100%; margin-top: 8px;">
+              <!-- wird dynamisch befüllt -->
+            </select>
+          </label>
+          <p id="monthHint" style="font-size: 13px; color: #666; margin-top: 8px; font-style: italic;">
+            <!-- "November 2025 wurde automatisch erkannt" -->
+          </p>
+        </div>
+
+        <div class="buttons" style="margin-top: 24px; justify-content: flex-end;">
+          <button type="button" id="nextToMapping" class="btn-primary" disabled>Weiter</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Spalten-Mapping -->
+      <div id="importStep2" class="import-step hidden">
+        <h2>📊 Spalten zuordnen</h2>
+        <p style="font-size: 14px; color: #666; margin-bottom: 16px;">
+          Ordne die CSV-Spalten den Clarity-Feldern zu:
+        </p>
+
+        <div id="columnMappingList" class="column-mapping-list">
+          <!-- wird dynamisch befüllt -->
+        </div>
+
+        <div class="buttons" style="margin-top: 24px; justify-content: flex-end;">
+          <button type="button" id="proceedToImport" class="btn-primary">Weiter</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Duplikat-Warnung -->
+      <div id="importStep3" class="import-step hidden">
+        <h2 id="conflictWarningTitle" style="display: none;">⚠️ Monat enthält bereits Daten</h2>
+        <p id="conflictWarningText" style="font-size: 14px; margin-bottom: 16px; display: none;">
+          <strong id="conflictMonthName"></strong> enthält bereits Daten.
+        </p>
+
+        <label style="display: flex; align-items: flex-start; margin-bottom: 12px; cursor: not-allowed; opacity: 0.5;">
+          <input type="radio" name="conflictMode" value="merge" checked disabled
+            style="margin-right: 8px; margin-top: 3px;" />
+          <div>
+            <strong>Daten zusammenführen (Merge)</strong><br />
+            <span style="font-size: 13px; color: #666;">Leere Felder werden befüllt, bestehende Werte bleiben
+              erhalten</span>
+          </div>
+        </label>
+
+        <label style="display: flex; align-items: flex-start; margin-bottom: 16px; cursor: not-allowed; opacity: 0.5;">
+          <input type="radio" name="conflictMode" value="overwrite" disabled
+            style="margin-right: 8px; margin-top: 3px;" />
+          <div>
+            <strong>Daten überschreiben</strong><br />
+            <span style="font-size: 13px; color: #666;">Alle bestehenden Daten werden gelöscht und ersetzt</span>
+          </div>
+        </label>
+
+        <div class="buttons" style="margin-top: 24px; justify-content: flex-end; gap: 12px;">
+          <button type="button" id="cancelImportStep3" class="btn-secondary"
+            onclick="window.closeImportModalFromButton()">Abbrechen</button>
+          <button type="button" id="confirmImport" class="btn-primary">Importieren</button>
+        </div>
+      </div>
+
+      <!-- Step 4: Erfolg -->
+      <div id="importStep4" class="import-step hidden">
+        <h2>✅ Import abgeschlossen! </h2>
+        <div id="importSummary"
+          style="font-size: 14px; margin: 16px 0; padding: 16px; background: #f0f8f4; border-left: 4px solid #4caf50; border-radius: 6px;">
+          <!-- wird dynamisch befüllt -->
+        </div>
+
+        <div class="buttons" style="margin-top: 24px; justify-content: flex-end;">
+          <button type="button" id="closeImportModal" class="btn-primary"
+            onclick="window.closeImportModalFromButton()">Schließen</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal: Facebook Ads Sync zu Tracking Sheets -->
+  <div id="facebookSyncModal" class="modal hidden">
+    <div class="modal-content">
+      <h2>🔄 Facebook Ads → Tracking Sheets</h2>
+      <p style="font-size: 14px; color: #666; margin-bottom: 20px;">
+        Synchronisiere deine Facebook Ads Daten automatisch in die Tracking Sheets.
+      </p>
+
+      <div style="margin-bottom: 20px;">
+        <label style="display: block; margin-bottom: 8px; font-weight: 600;">
+          Zeitraum
+        </label>
+        <select id="syncMonthsBack" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+          <option value="1">Dieser Monat</option>
+          <option value="2">Dieser Monat + letzter Monat</option>
+          <option value="3" selected>Die letzten 3 Monate</option>
+          <option value="6">Die letzten 6 Monate</option>
+          <option value="12">Die letzten 12 Monate</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+          <input type="checkbox" id="syncAutoDaily" style="margin-right: 8px;" />
+          <span style="font-size: 14px;">Automatisch täglich synchronisieren (ab morgen)</span>
+        </label>
+        <p style="font-size: 12px; color: #666; margin: 8px 0 0 24px;">
+          Daten werden jeden Tag um 3:00 Uhr automatisch aktualisiert.
+        </p>
+      </div>
+
+      <div id="syncPreview" style="background: #f8f9fa; padding: 16px; border-radius: 6px; margin-bottom: 20px; display: none;">
+        <h4 style="margin: 0 0 12px 0; font-size: 14px;">Vorschau:</h4>
+        <div id="syncPreviewContent" style="font-size: 13px; color: #495057;">
+          <!-- Wird dynamisch befüllt -->
+        </div>
+      </div>
+
+      <div class="buttons">
+        <button type="button" id="cancelSyncModal" class="btn-secondary">Abbrechen</button>
+        <button type="button" id="confirmSync" class="btn-primary">Synchronisieren</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Integrations Hub -->
+  <div id="integrations-modal" class="modal hidden">
+    <div class="modal-content" style="max-width: 900px;">
+      <h2>🔌 Integrationen</h2>
+      <p style="font-size: 14px; color: #666; margin-bottom: 30px;">
+        Verbinde externe Tools, um automatisch Leads, Conversions und Revenue zu tracken.
+      </p>
+
+      <div class="integrations-grid">
+        <!-- Typeform -->
+        <div class="integration-card">
+          <div class="integration-icon">📝</div>
+          <div class="integration-info">
+            <h3>Typeform</h3>
+            <p>Survey-Daten automatisch erfassen</p>
+            <p class="integration-fills">Füllt: <strong>Leads, Survey, Survey Qualified</strong></p>
+          </div>
+          <button class="btn-primary" onclick="window.TypeformAPI.openConnectionModal(); document.getElementById('integrations-modal').style.display='none';">
+            Verbinden
+          </button>
+        </div>
+
+        <!-- Calendly -->
+        <div class="integration-card">
+          <div class="integration-icon">📅</div>
+          <div class="integration-info">
+            <h3>Calendly</h3>
+            <p>Setting-Termine automatisch tracken</p>
+            <p class="integration-fills">Füllt: <strong>Setting Termine, Show-Ups</strong></p>
+          </div>
+          <button class="btn-secondary" disabled>
+            Bald verfügbar
+          </button>
+        </div>
+
+        <!-- Stripe/Whop -->
+        <div class="integration-card">
+          <div class="integration-icon">💳</div>
+          <div class="integration-info">
+            <h3>Stripe / Whop</h3>
+            <p>Revenue & Cash Collection tracken</p>
+            <p class="integration-fills">Füllt: <strong>Units, Revenue, Cash</strong></p>
+          </div>
+          <button class="btn-secondary" disabled>
+            Bald verfügbar
+          </button>
+        </div>
+
+        <!-- Close.io -->
+        <div class="integration-card">
+          <div class="integration-icon">📞</div>
+          <div class="integration-info">
+            <h3>Close.io</h3>
+            <p>CRM & Call-Daten synchronisieren</p>
+            <p class="integration-fills">Füllt: <strong>Setting Calls, Closing Calls</strong></p>
+          </div>
+          <button class="btn-secondary" disabled>
+            Bald verfügbar
+          </button>
+        </div>
+
+        <!-- ClickFunnels -->
+        <div class="integration-card">
+          <div class="integration-icon">🌐</div>
+          <div class="integration-info">
+            <h3>ClickFunnels</h3>
+            <p>Funnel-Leads automatisch erfassen</p>
+            <p class="integration-fills">Füllt: <strong>Leads</strong></p>
+          </div>
+          <button class="btn-secondary" disabled>
+            Bald verfügbar
+          </button>
+        </div>
+
+        <!-- Zoom -->
+        <div class="integration-card">
+          <div class="integration-icon">🎥</div>
+          <div class="integration-info">
+            <h3>Zoom</h3>
+            <p>Call Recordings & Transkripte</p>
+            <p class="integration-fills">Füllt: <strong>Call Transcripts (Phase 3)</strong></p>
+          </div>
+          <button class="btn-secondary" disabled>
+            Bald verfügbar
+          </button>
+        </div>
+      </div>
+
+      <div class="buttons" style="margin-top: 30px;">
+        <button type="button" onclick="document.getElementById('integrations-modal').style.display='none'" class="btn-secondary">
+          Schließen
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Typeform Integration -->
+  <!-- Modal: Typeform Integration (OAuth Flow) -->
+  <div id="typeform-modal" class="modal hidden">
+    <div class="modal-content" style="max-width: 800px;">
+      <h2>📝 Typeform Integration</h2>
+      <p style="font-size: 14px; color: #666; margin-bottom: 20px;">
+        Verbinde dein Typeform-Konto via OAuth, um automatisch Leads und Events zu erfassen.
+      </p>
+
+      <!-- Dynamic Content Container (filled by typeform-api.js) -->
+      <div id="typeform-content">
+        <!-- Wird dynamisch von TypeformAPI.renderConnectionUI() befüllt -->
+      </div>
+
+      <div class="buttons">
+        <button type="button" onclick="window.TypeformAPI.closeConnectionModal()" class="btn-secondary">
+          Schließen
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Typeform Form Mapping (Create/Edit) -->
+  <!-- ========================================
+       SCRIPTS - Modular Structure
+       ⚠️ Load order is critical!
+       ======================================== -->
+
+  <!-- CORE SYSTEM - Must load first -->
+  <script src="scripts/core/storage.js"></script>
+  <script src="scripts/core/utils.js"></script>
+  <script src="scripts/core/modules.js"></script>
+
+  <!-- GLOBAL APIs -->
+  <script src="scripts/api/toast-api.js"></script>
+  <script src="scripts/api/funnel-api.js"></script>
+  <script src="scripts/api/facebook-traffic-api.js"></script>
+  <script src="scripts/api/typeform-api.js"></script>
+  <script src="scripts/api/datapool-api.js"></script>
+
+  <!-- INTEGRATIONS -->
+  <script src="scripts/integrations/supabase-client.js"></script>
+
+  <!-- AUTH -->
+  <script src="scripts/auth/auth.js"></script>
+  <script src="scripts/auth/api-settings.js"></script>
+
+  <!-- VIEWS -->
+  <script src="scripts/views/main.js"></script>
+  <script src="scripts/views/month-view.js?v=20260215"></script>
+  <script src="scripts/views/year-view.js"></script>
+  <script src="scripts/views/sidebar.js"></script>
+
+  <!-- FEATURES -->
+  <script src="scripts/features/loading.js"></script>
+  <script src="scripts/features/utm-tracker.js"></script>
+  <script src="scripts/features/wizard.js"></script>
+  <script src="scripts/features/cell-selection.js"></script>
+
+  <!-- IMPORT -->
+  <script src="scripts/import/csv-month.js"></script>
+  <script src="scripts/import/csv-datapool.js"></script>
+
+  <!-- INITIALIZATION CHECK -->
+  <script>
+    (function() {
+      const requiredAPIs = [
+        'StorageAPI',
+        'FunnelAPI', 
+        'ClarityUtils',
+        'FunnelModules',
+        'Toast',
+        'DataPool',
+        'CellSelection',
+        'WizardAPI'
+      ];
+      
+      const missing = [];
+      requiredAPIs.forEach(api => {
+        if (!window[api]) {
+          missing.push(api);
+          console.error(`❌ ${api} failed to load`);
+        } else {
+          console.log(`✅ ${api} loaded`);
+        }
+      });
+      
+      if (missing.length > 0) {
+        alert(`⚠️ Fehler beim Laden:\n${missing.join('\n')}\n\nÖffne die Console (F12) für Details.`);
+      } else {
+        console.log('🎉 Alle Module erfolgreich geladen!');
+      }
+    })();
+  </script>
+
+  <!-- Sidebar wird nach Login in mainInit initialisiert -->
+
+  <!-- Versteckter File-Input -->
+  <input type="file" id="csvFileInput" accept=".csv" style="display: none;" />
+
+</body>
+
+</html>

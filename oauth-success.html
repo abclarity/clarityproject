@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facebook Verbunden</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .container {
+      text-align: center;
+      padding: 40px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 16px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    }
+    .checkmark {
+      font-size: 64px;
+      animation: scale 0.5s ease-out;
+    }
+    @keyframes scale {
+      0% { transform: scale(0); }
+      50% { transform: scale(1.2); }
+      100% { transform: scale(1); }
+    }
+    h2 { 
+      margin: 20px 0 10px;
+      font-size: 24px;
+      font-weight: 600;
+    }
+    p { 
+      opacity: 0.9;
+      font-size: 14px;
+    }
+    .details {
+      margin-top: 20px;
+      padding: 15px;
+      background: rgba(0,0,0,0.2);
+      border-radius: 8px;
+      font-size: 12px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="checkmark">✅</div>
+    <h2>Erfolgreich verbunden!</h2>
+    <p>Deine Facebook Ads werden jetzt synchronisiert...</p>
+    <div class="details" id="details"></div>
+  </div>
+
+  <script>
+    (function() {
+      // Parse URL parameters
+      const params = new URLSearchParams(window.location.search);
+      const connectionId = params.get('connection_id');
+      const fbUserId = params.get('fb_user_id');
+      
+      console.log('OAuth Success Page:', { connectionId, fbUserId });
+      
+      // Display details
+      const detailsEl = document.getElementById('details');
+      if (connectionId) {
+        detailsEl.innerHTML = `
+          <div>Connection ID: ${connectionId}</div>
+          <div>Facebook User: ${fbUserId}</div>
+        `;
+      }
+      
+      // Signal parent window
+      if (window.opener) {
+        console.log('Sending postMessage to opener window');
+        window.opener.postMessage({
+          type: 'facebook_oauth_complete',
+          success: true,
+          connection_id: connectionId,
+          fb_user_id: fbUserId
+        }, '*');
+      } else {
+        console.warn('No opener window found');
+      }
+      
+      // Auto-close after 2 seconds
+      setTimeout(() => {
+        console.log('Attempting to close popup...');
+        window.close();
+        
+        // Fallback message if window.close() doesn't work
+        setTimeout(() => {
+          const container = document.querySelector('.container');
+          container.innerHTML = `
+            <div class="checkmark">✅</div>
+            <h2>Verbunden!</h2>
+            <p>Du kannst dieses Fenster jetzt schließen.</p>
+          `;
+        }, 1000);
+      }, 2000);
+    })();
+  </script>
+</body>
+</html>

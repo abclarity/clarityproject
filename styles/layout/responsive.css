@@ -1,0 +1,72 @@
+/* ============================================
+   MOBILE OPTIMIERUNG
+   ============================================ */
+@media (max-width: 900px) {
+  #tabs .tab {
+    font-size: 13px;
+    padding: 5px 10px;
+  }
+
+  #tabs {
+    padding-left: 12px !important;
+    gap: 6px;
+  }
+
+  #app {
+    padding: 0 12px 70px 12px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .datapool-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .datapool-tabs {
+    gap: 6px;
+  }
+
+  .datapool-tab {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .lead-detail-info {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .datapool-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .datapool-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .datapool-btn {
+    width: 100%;
+  }
+
+  .datapool-table-container {
+    overflow-x: scroll;
+  }
+
+  .datapool-table {
+    min-width: 1000px;
+    font-size: 11px;
+  }
+
+  .datapool-table th {
+    font-size: 10px;
+    padding: 6px 8px;
+  }
+
+  .datapool-table td {
+    padding: 8px;
+  }
+}

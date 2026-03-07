@@ -1,0 +1,303 @@
+/* ============================================
+   TABELLE
+   ============================================ */
+.table-wrap {
+  overflow-x: auto;
+  overflow-y: visible;
+  border-radius: 8px;
+  padding: 0 0 6px 0;
+  margin: 0 0 12px 0;
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: 100%;
+}
+
+table {
+  width: auto;
+  border-collapse: collapse;
+  border-spacing: 0;
+  min-width: 1900px;
+  background: var(--card);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  margin: 0;
+}
+
+
+/* Kopfzeile */
+thead th {
+  background: var(--header-bg);
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.1;
+  padding: 3px 6px;
+  border: 1px solid var(--border-dark);
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Allgemeine Zellen */
+td {
+  border: 1px solid var(--border-light);
+  padding: 4px 6px;
+  font-size: 13px;
+  vertical-align: middle;
+  text-align: right;
+  white-space: nowrap;
+  line-height: 1.1;
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* Input-Zellen: Cursor zeigt Klickbarkeit */
+td:has(input[type="text"]),
+td:has(input[type="number"]) {
+  cursor: pointer;
+  padding: 0;
+}
+
+/* Berechnete KPI-Felder (grau) */
+td.calc {
+  background: var(--formula-bg);
+  color: #444;
+  text-align: center;
+  vertical-align: middle;
+  cursor: default !important;
+  padding: 4px 6px !important;
+}
+
+/* Wochentag-Spalte */
+td.weekday {
+  text-align: center;
+  cursor: default !important;
+  padding: 4px 6px !important;
+}
+
+/* Sonntag (orange) */
+td.sunday-cell {
+  background: #dc8c37 !important;
+  color: #f2f2f2 !important;
+  font-weight: 600 !important;
+  text-align: center;
+  cursor: default !important;
+  padding: 4px 6px !important;
+}
+
+/* ============================================
+   EINGABEFELDER
+   ============================================ */
+input[type="text"],
+input[type="number"],
+input[type="date"] {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  padding: 4px 6px;
+  margin: 0;
+  text-align: center;
+  vertical-align: middle;
+  font-size: 13px;
+  color: #000;
+  outline: none;
+  box-shadow: none;
+  line-height: 1.2;
+  box-sizing: border-box;
+  pointer-events: none;
+  cursor: default;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="date"]:focus {
+  background: #fff;
+  outline: 2px solid #1877f2;
+  outline-offset: -2px;
+  box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.1);
+  pointer-events: auto;
+}
+
+/* Pfeile aus number-Feldern entfernen */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ============================================
+   TAG & DATUM SPALTEN (erste 2 Spalten)
+   ============================================ */
+#tracker tbody td:nth-child(1),
+#tracker tbody td:nth-child(2) {
+  background: #696969;
+  color: #f2f2f2;
+  font-weight: 400;
+  border: none;
+  text-align: center;
+  vertical-align: middle;
+  cursor: default !important;
+  padding: 4px 6px !important;
+}
+
+/* ============================================
+   WEEKLY-ZEILEN
+   ============================================ */
+tr[data-week] td:nth-child(1),
+tr[data-week] td:nth-child(2) {
+  background: #696969 !important;
+  color: #f2f2f2 !important;
+  font-weight: 400 !important;
+  border: none !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+
+tr[data-week] td {
+  border: 1px solid var(--border-light);
+  border-top: none;
+  font-size: 13px;
+  vertical-align: middle;
+  text-align: center;
+  font-weight: 400;
+  background: #fff;
+  color: #000;
+}
+
+tr[data-week] td.calc {
+  background: var(--formula-bg);
+  color: #444;
+}
+
+#weekly-header td {
+  border-top: 2px solid #fff;
+}
+
+/* ============================================
+   FOOTER / TOTAL-Zeile (Monatssheet)
+   ============================================ */
+tfoot td {
+  border: 1px solid var(--border-dark);
+  background: var(--header-bg);
+  color: #fff;
+  text-align: center;
+  vertical-align: middle;
+  font-weight: 800;
+}
+
+tfoot td.total-merged {
+  background: var(--header-bg);
+  color: #fff;
+  font-weight: 800;
+  text-align: center;
+  vertical-align: middle;
+  border: 1px solid var(--border-dark);
+  font-size: 14px;
+}
+
+tfoot tr#summary-row td {
+  background: var(--header-bg) !important;
+  color: #fff !important;
+  font-weight: 800;
+  text-align: center;
+  vertical-align: middle;
+  border: 1px solid var(--border-dark);
+}
+
+tfoot tr#summary-row td.calc {
+  background: var(--header-bg) !important;
+  color: #fff !important;
+}
+
+/* Wiederholte Header (über TOTAL) */
+.repeat-header td,
+tfoot .repeat-head {
+  background: var(--header-bg);
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.1;
+  padding: 3px 6px;
+  border: 1px solid var(--border-dark);
+  text-align: center;
+  vertical-align: middle;
+}
+
+/* TOTAL-Zeile: keine Sonderfarbe auf Tag & Datum */
+tfoot tr#summary-row td:nth-child(1),
+tfoot tr#summary-row td:nth-child(2) {
+  background: var(--header-bg) !important;
+  color: #fff !important;
+  font-weight: 800 !important;
+  border: 1px solid var(--border-dark) !important;
+}
+
+/* ============================================
+   JAHRESDASHBOARD
+   ============================================ */
+#year-body td,
+#year-summary td {
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+
+/* TOTAL-Zeile: alle Felder dunkelgrau */
+#year-summary td {
+  background: var(--header-bg) !important;
+  color: #fff !important;
+  font-weight: 800;
+  border: 1px solid var(--border-dark);
+}
+
+#year-summary td.calc {
+  background: var(--header-bg) !important;
+  color: #fff !important;
+}
+
+/* Monatsnamen (Jan–Dez): wie Tag/Datum */
+#year-body td:first-child {
+  background: #696969 !important;
+  color: #fff !important;
+  font-weight: 400 !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  border: none !important;
+}
+
+/* Quartale (Q1–Q4) */
+tr[data-quarter] td {
+  border: 1px solid var(--border-light);
+  font-size: 13px;
+  vertical-align: middle;
+  text-align: center;
+  font-weight: 400;
+  background: #fff;
+  color: #000;
+}
+
+tr[data-quarter] td:first-child {
+  background: #696969;
+  color: #f2f2f2;
+  font-weight: 400;
+  border: none;
+  text-align: center;
+}
+
+tr[data-quarter] td.calc {
+  background: var(--formula-bg);
+  color: #444;
+}
+
+/* Spacer zwischen TOTAL und Quartalen */
+.spacer-row td {
+  background: var(--bg) !important;
+  border: none !important;
+  height: 20px;
+}

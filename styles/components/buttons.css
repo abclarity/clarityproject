@@ -1,0 +1,308 @@
+/* ============================================
+   FUNNEL-BUTTONS (dynamisch)
+   ============================================ */
+
+/* Basis für alle Funnel-Buttons */
+.funnel-btn {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 580;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  color: #333;
+  height: auto;
+  margin-left: 8px;
+}
+
+.funnel-btn:first-of-type {
+  margin-left: 0;
+}
+
+/* Normal Hover (benutzt CSS-Variable) */
+.funnel-btn:hover {
+  background: var(--funnel-color);
+  color: #fff;
+  border-color: var(--funnel-color);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* Active (behält Farbe) */
+.funnel-btn.active {
+  background: var(--funnel-color);
+  color: #fff;
+  border-color: var(--funnel-color);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Active Hover (dunklere Variante) */
+.funnel-btn.active:hover {
+  filter: brightness(0.85);
+}
+
+/* Click */
+.funnel-btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Add Funnel Button (+) - wie im Footer */
+.add-funnel-btn {
+  background: transparent !important;
+  border: none !important;
+  color: #333;
+  font-size: 20px;
+  font-weight: 400;
+  width: 34px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 8px;
+  border-radius: 6px;
+}
+
+.add-funnel-btn:hover {
+  background: #f7f7f7 !important;
+  border: 1px solid #ccc !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.add-funnel-btn:active {
+  background: #ececec !important;
+  border-color: #aaa !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* ============================================
+   IMPORT BUTTON (im Header - wie Jahr-Button)
+   ============================================ */
+.import-btn {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 580;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  color: #333;
+  height: auto;
+  min-height: 28px;
+  flex-shrink: 0;
+}
+
+.import-btn:hover {
+  background: #f3f3f3;
+  border-color: #aaa;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.import-btn:active {
+  background: #eaeaea;
+  border-color: #999;
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Button Styles */
+.btn-secondary {
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ccc;
+}
+
+.btn-secondary:hover {
+  background: #e0e0e0;
+  border-color: #aaa;
+}
+
+.btn-danger {
+  background: #d32f2f;
+  color: #fff;
+  border: 1px solid #d32f2f;
+}
+
+.btn-danger:hover {
+  background: #b71c1c;
+  border-color: #b71c1c;
+}
+
+. btn-danger:active {
+  background: #9a0007;
+  transform: translateY(0);
+}
+
+.btn-primary {
+  background: #1877f2;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #1464d8;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(24, 119, 242, 0.3);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-primary:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.btn-secondary {
+  background: #fff;
+  color: #333;
+  border: 1px solid #ccc;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-secondary:hover {
+  background: #f3f3f3;
+  border-color: #aaa;
+}
+
+/* ============================================
+   BUTTON STATES (disabled)
+   ============================================ */
+. btn-primary:disabled,
+.btn-secondary:disabled {
+  background: #e0e0e0 ! important;
+  color: #999 !important;
+  border-color: #ccc !important;
+  cursor: not-allowed !important;
+  opacity: 0.6 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.btn-primary:disabled:hover,
+.btn-secondary:disabled:hover {
+  background: #e0e0e0 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-small {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-primary {
+  background: #3498db;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #2980b9;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3);
+}
+
+.btn-secondary {
+  background: #95a5a6;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #7f8c8d;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(149, 165, 166, 0.3);
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.btn-filter {
+  background: none;
+  border: 1px solid #bdc3c7;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #7f8c8d;
+  transition: all 0.2s ease;
+}
+
+.btn-filter:hover {
+  background: #ecf0f1;
+  border-color: #95a5a6;
+}
+
+.btn-load-more {
+  width: 100%;
+  padding: 10px;
+  background: #ecf0f1;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #7f8c8d;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-load-more:hover {
+  background: #bdc3c7;
+  color: #2c3e50;
+}
+
+.btn-load-more.hidden {
+  display: none;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+  pointer-events: auto !important;
+}
+
+.btn-icon:hover {
+  background: #ecf0f1;
+}

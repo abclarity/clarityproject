@@ -1,0 +1,13 @@
+/* ============================================
+   CSS VARIABLES (zentrale Farben)
+   ============================================ */
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --muted: #777;
+  --formula-bg: #f0f0f0;
+  --sunday-bg: #fff3e0;
+  --header-bg: #333;
+  --border-light: #e0e0e0;
+  --border-dark: #444;
+}

@@ -1,0 +1,153 @@
+/* ============================================
+   ZOOM AREA
+   ============================================ */
+#zoomArea {
+  transform-origin: top left;
+  transition: transform 0.2s ease;
+  display: inline-block;
+  width: fit-content;
+}
+
+/* ============================================
+   ZOOM CONTROLS
+   ============================================ */
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.zoom-controls button {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  height: 28px;
+  width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.zoom-controls button:hover {
+  background: #f3f3f3;
+  border-color: #aaa;
+  transform: translateY(-1px);
+}
+
+.zoom-controls button:active {
+  background: #eaeaea;
+  border-color: #999;
+  transform: translateY(0);
+}
+
+.zoom-controls span {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 0 10px;
+  min-width: 60px;
+  text-align: center;
+  font-weight: 600;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+/* ============================================
+   JAHR-DROPDOWN
+   ============================================ */
+.year-select {
+  position: relative;
+  display: inline-block;
+  z-index: 9999;
+}
+
+.year-btn {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 580;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.year-btn:hover {
+  background: #f3f3f3;
+  border-color: #aaa;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.year-btn:active {
+  background: #eaeaea;
+  border-color: #999;
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* CSS-Dreieck */
+.year-btn::after {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid #888;
+  margin-left: 6px;
+}
+
+.year-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -4px;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 100%;
+  width: 100%;
+  padding: 4px 0;
+  z-index: 10000;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.year-dropdown.hidden {
+  display: none;
+}
+
+.year-option {
+  padding: 10px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  text-align: center;
+}
+
+.year-option:hover {
+  background: #f2f2f2;
+}
+
+/* Trennlinie zwischen ALLEN Jahren */
+.year-option+.year-option {
+  border-top: 1px solid #eee;
+}

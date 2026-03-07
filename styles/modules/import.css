@@ -1,0 +1,550 @@
+/* ============================================
+   IMPORT MODAL
+   ============================================ */
+.import-modal {
+  max-width: 600px;
+  max-height: 85vh;
+  /* 🔥 Maximale Höhe: 85% des Viewports */
+  overflow-y: auto;
+  /* 🔥 Vertikales Scrollen aktivieren */
+  display: flex;
+  flex-direction: column;
+}
+
+.import-step {
+  display: block;
+}
+
+.import-step. hidden {
+  display: none;
+}
+
+.import-modal label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.import-modal select {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.import-modal select:focus {
+  outline: none;
+  border-color: #1877f2;
+  box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.1);
+}
+
+/* ============================================
+   COLUMN MAPPING LIST
+   ============================================ */
+.column-mapping-list {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f9f9f9;
+}
+
+.mapping-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 12px;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  transition: all 0.2s ease;
+}
+
+.mapping-row:hover {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.mapping-row. matched {
+  border-color: #4caf50;
+  background: #f1f8f4;
+}
+
+.mapping-row.suggested {
+  border-color: #ff9800;
+  background: #fff8f0;
+}
+
+.mapping-row.unmapped {
+  border-color: #ddd;
+  background: #fafafa;
+}
+
+.mapping-row. notfound {
+  border-color: #f44336;
+  background: #ffebee;
+}
+
+.mapping-csv-col {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+}
+
+.mapping-arrow {
+  color: #999;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.mapping-clarity-col {
+  flex: 1. 5;
+}
+
+.mapping-clarity-col select {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.mapping-clarity-col select:focus {
+  outline: none;
+  border-color: #1877f2;
+}
+
+.mapping-status {
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.mapping-status.matched {
+  color: #4caf50;
+  background: #e8f5e9;
+}
+
+.mapping-status.suggested {
+  color: #ff9800;
+  background: #fff3e0;
+}
+
+.mapping-status.ignored {
+  color: #999;
+  background: #f5f5f5;
+}
+
+.mapping-status.notfound {
+  color: #f44336;
+  background: #ffcdd2;
+}
+
+/* ============================================
+   IMPORT MODAL - SCROLL FIX
+   ============================================ */
+.import-modal {
+  max-width: 600px;
+  max-height: 80%;
+  /* 85% der Bildschirmhöhe */
+  overflow-y: auto;
+  /* Scroll aktivieren */
+  display: flex;
+  flex-direction: column;
+}
+
+/* Buttons immer unten sichtbar */
+.import-modal . buttons {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid #e0e0e0;
+  background: #fff;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+}
+
+/* Mapping-Liste scrollbar */
+.column-mapping-list {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f9f9f9;
+  flex: 1;
+  /* 🔥 Nimmt verfügbaren Platz */
+}
+
+/* ============================================
+   IMPORT MODAL - STEPS
+   ============================================ */
+.import-step {
+  display: block;
+}
+
+.import-step.hidden {
+  display: none ! important;
+  /* 🔥 ! important hinzufügen */
+}
+
+/* ============================================
+   CSV DATEI-AUSWAHL BUTTON (Feld-Stil)
+   ============================================ */
+#selectCsvBtn {
+  background: #f9f9f9 ! important;
+  /* 🔥 Grau von Anfang an */
+  border: 1px solid #ccc !important;
+  /* 🔥 Sichtbarerer Border */
+  border-radius: 8px !important;
+  padding: 12px 16px !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  color: #333 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  text-align: center !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+  /* 🔥 Leichter Schatten */
+}
+
+#selectCsvBtn:hover {
+  background: #ececec !important;
+  /* 🔥 Dunkler beim Hover */
+  border-color: #aaa !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+#selectCsvBtn:active {
+  background: #e0e0e0 !important;
+  /* 🔥 Noch dunkler beim Click */
+  border-color: #999 !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* ============================================
+   SURVEY QUESTION MAPPING
+   ============================================ */
+.survey-question-list {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #e1e8ed;
+  border-radius: 8px;
+  padding: 16px;
+  background: #f8f9fa;
+}
+
+.survey-question-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  background: white;
+  border: 1px solid #e1e8ed;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.survey-question-item:hover {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.survey-question-item > label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  margin: 0;
+  min-width: 0;
+}
+
+.survey-question-checkbox {
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.column-name {
+  font-size: 13px;
+  color: #2c3e50;
+  flex: 1;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.5;
+}
+
+.survey-question-label-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 26px;
+}
+
+.survey-question-label-text {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.survey-question-label {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #f8fafc;
+  box-sizing: border-box;
+  font-weight: 500;
+  color: #2563eb;
+  transition: all 0.2s ease;
+}
+
+.survey-question-label:focus {
+  outline: none;
+  border-color: #2563eb;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.survey-question-label:disabled {
+  background: #f0f0f0;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.survey-question-label:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.1);
+}
+
+.btn-secondary {
+  background: #95a5a6;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-right: 8px;
+}
+
+.btn-secondary:hover {
+  background: #7f8c8d;
+}
+
+/* ============================================
+   AUTO-DETECT BADGE & SECTIONS
+   ============================================ */
+.survey-section-header {
+  margin: 16px 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.auto-detect-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #27ae60;
+  background: #d5f4e6;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid #27ae60;
+}
+
+.other-columns-section {
+  margin-top: 24px;
+  border-top: 2px solid #e0e0e0;
+  padding-top: 16px;
+}
+
+.other-columns-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #555;
+  transition: all 0.2s ease;
+}
+
+.other-columns-toggle:hover {
+  background: #ebebeb;
+  border-color: #ccc;
+}
+
+.other-columns-toggle .toggle-icon {
+  font-size: 10px;
+  transition: transform 0.2s ease;
+  color: #888;
+}
+
+.other-columns-toggle.expanded .toggle-icon {
+  transform: rotate(90deg);
+}
+
+.other-columns-list {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  margin-top: 12px;
+}
+
+.other-columns-list.expanded {
+  max-height: 2000px;
+  overflow: visible;
+}
+
+/* Button spacing for survey step */
+.survey-step-buttons {
+  margin-top: 24px;
+}
+
+/* ============================================
+   QUALIFICATION STEP
+   ============================================ */
+.qualification-mapping {
+  margin: 20px 0;
+}
+
+.qualification-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 16px;
+}
+
+.qualification-checkbox-label input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.qualification-settings {
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.qualification-settings.hidden {
+  display: none;
+}
+
+.qualification-field {
+  margin-bottom: 20px;
+}
+
+.qualification-field:last-child {
+  margin-bottom: 0;
+}
+
+.qualification-field label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #2c3e50;
+  margin-bottom: 8px;
+}
+
+.qualification-select,
+.qualification-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: white;
+}
+
+.qualification-select:focus,
+.qualification-input:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+.qualification-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #7f8c8d;
+  font-style: italic;
+}
+
+.answer-options-container {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  padding: 12px;
+}
+
+.answer-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.answer-option-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin: 0;
+}
+
+.answer-option-item:hover {
+  background: #e9ecef;
+  border-color: #3498db;
+}
+
+.answer-option-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.answer-text {
+  font-size: 14px;
+  color: #2c3e50;
+  flex: 1;
+}
+

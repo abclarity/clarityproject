@@ -1,0 +1,302 @@
+/* Typeform Integration Styles */
+
+/* Integrations Hub Grid */
+.integrations-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.integration-card {
+  background: white;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  transition: all 0.3s;
+}
+
+.integration-card:hover {
+  border-color: #3498db;
+  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.15);
+  transform: translateY(-2px);
+}
+
+.integration-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.integration-info {
+  flex: 1;
+  margin-bottom: 16px;
+}
+
+.integration-info h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  color: #2c3e50;
+}
+
+.integration-info p {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.integration-fills {
+  font-size: 12px !important;
+  color: #999 !important;
+  margin-top: 12px !important;
+}
+
+.integration-fills strong {
+  color: #3498db;
+}
+
+.integration-card button {
+  width: 100%;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.integration-card button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Typeform Mapping Items */
+
+.typeform-mapping-item {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  transition: box-shadow 0.2s;
+}
+
+.typeform-mapping-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.mapping-info {
+  flex: 1;
+}
+
+.mapping-form-name {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.mapping-details {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 6px;
+}
+
+.mapping-form-id {
+  font-family: 'Courier New', monospace;
+  background: #f8f9fa;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.mapping-funnel {
+  color: #495057;
+}
+
+.mapping-qualification {
+  font-size: 12px;
+  color: #28a745;
+  margin-top: 4px;
+}
+
+.mapping-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-edit,
+.btn-delete {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 4px;
+  border: 1px solid;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-edit {
+  background: white;
+  color: #3498db;
+  border-color: #3498db;
+}
+
+.btn-edit:hover {
+  background: #3498db;
+  color: white;
+}
+
+.btn-delete {
+  background: white;
+  color: #e74c3c;
+  border-color: #e74c3c;
+}
+
+.btn-delete:hover {
+  background: #e74c3c;
+  color: white;
+}
+
+/* Form styles */
+#typeform-mapping-modal label {
+  font-size: 14px;
+  color: #2c3e50;
+}
+
+#typeform-mapping-modal input,
+#typeform-mapping-modal select {
+  font-size: 14px;
+}
+
+#typeform-mapping-modal input::placeholder {
+  color: #adb5bd;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .integrations-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .typeform-mapping-item {
+    flex-direction: column;
+  }
+
+  .mapping-actions {
+    margin-top: 12px;
+    width: 100%;
+  }
+
+  .btn-edit,
+  .btn-delete {
+    flex: 1;
+  }
+}
+
+/* ======================================
+   OAuth Flow Styles
+   ====================================== */
+
+/* Connection Status (Connected State) */
+.typeform-connected {
+  padding: 1rem 0;
+}
+
+.connection-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #d4edda;
+  padding: 1rem;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+  border-left: 4px solid #28a745;
+}
+
+.connection-status strong {
+  color: #155724;
+  margin-right: 0.5rem;
+}
+
+/* Connected Forms List */
+.typeform-form-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  transition: border-color 0.2s ease;
+}
+
+.typeform-form-item:hover {
+  border-color: #3498db;
+}
+
+.typeform-form-item strong {
+  display: block;
+  color: #2c3e50;
+  margin-bottom: 0.25rem;
+}
+
+.typeform-form-item small {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #666;
+}
+
+/* Form Setup Modal (dynamically created) */
+#typeform-setup-modal .form-group {
+  margin-bottom: 1.5rem;
+}
+
+#typeform-setup-modal label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #2c3e50;
+}
+
+#typeform-setup-modal select,
+#typeform-setup-modal input[type="text"] {
+  width: 100%;
+  padding: 0.625rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  transition: border-color 0.2s ease;
+}
+
+#typeform-setup-modal select:focus,
+#typeform-setup-modal input[type="text"]:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+#typeform-setup-modal small {
+  display: block;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+  line-height: 1.4;
+  color: #666;
+}
+
+/* Responsive for OAuth UI */
+@media (max-width: 768px) {
+  .connection-status {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .typeform-form-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+}

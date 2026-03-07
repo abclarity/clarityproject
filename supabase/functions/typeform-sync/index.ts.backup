@@ -1,0 +1,304 @@
+// Typeform Forms Sync & Webhook Setup
+// Fetches user's forms from Typeform API and creates webhooks automatically
+
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+const TYPEFORM_API_URL = 'https://api.typeform.com';
+
+interface TypeformForm {
+  id: string;
+  title: string;
+  self: {
+    href: string;
+  };
+  fields: Array<{
+    id: string;
+    title: string;
+    type: string;
+    properties?: any;
+  }>;
+}
+
+interface TypeformWebhookResponse {
+  id: string;
+  form_id: string;
+  tag: string;
+  url: string;
+  enabled: boolean;
+  created_at: string;
+}
+
+Deno.serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  try {
+    // Get user from Authorization header
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing authorization' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Initialize Supabase client
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    );
+      if (authError || !user) {
+      return new Response(JSON.stringify({ error: 'Invalid token' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const userId = user.id;
+    const body = await req.json();
+    const action = body.action; // 'fetch_forms' or 'setup_webhook'
+
+    // ==================== FETCH FORMS ====================
+    if (action === 'fetch_forms') {
+      console.log(`Fetching forms for user: ${userId}`);
+
+      // Get Typeform access token
+      const { data: connection, error: connError } = await supabase
+        .from('typeform_connections')
+        .select('access_token')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .single();
+
+      if (connError || !connection) {
+        return new Response(JSON.stringify({ 
+          error: 'Keine aktive Typeform-Verbindung gefunden. Bitte neu verbinden.' 
+        return new Response(JSON.stringify({ 
+          error: 'Keine aktive Typeform-Verbindung gefunden. Bitte neu verbinden.' 
+        }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      // Fetch forms from Typeform API
+      const formsResponse = await fetch(`${TYPEFORM_API_URL}/forms`, {
+        headers: {
+          'Authorization': `Bearer ${connection.access_token}`,
+        },
+      });
+
+      if (!formsResponse.ok) {
+        const errorText = await formsResponse.text();
+        console.error('Failed to fetch forms:', errorText);
+        return new Response(JSON.stringify({ 
+          error: 'Fehler beim Laden der Formulare' 
+        return new Response(JSON.stringify({ 
+          error: 'Fehler beim Laden der Formulare' 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      const formsData = await formsResponse.json();
+      const forms = formsData.items || [];
+
+      console.log(`Found ${forms.length} forms`);
+
+      // Fetch full details for each form (including fields)
+      const detailedForms = await Promise.all(
+        forms.map(async (form: any) => {
+          const detailResponse = await fetch(`${TYPEFORM_API_URL}/forms/${form.id}`, {
+            headers: {
+              'Authorization': `Bearer ${connection.access_token}`,
+            },
+          });
+
+          if (!detailResponse.ok) {
+            console.error(`Failed to fetch form details for ${form.id}`);
+            return {
+              id: form.id,
+              title: form.title,
+              url: form._links?.display || null,
+              fields: [],
+            };
+          }
+
+          const detailData: TypeformForm = await detailResponse.json();
+          
+          return {
+            id: detailData.id,
+            title: detailData.title,
+            url: detailData.self?.href || null,
+            fields: detailData.fields.map(f => ({
+              id: f.id,
+              title: f.title,
+              type: f.type,
+            })),
+          };
+        })
+      );
+
+      return new Response(JSON.stringify({ forms: detailedForms }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ==================== SETUP WEBHOOK ====================
+    if (action === 'setup_webhook') {
+      const { form_id, funnel_id, qualification_field_id, qualifying_answers } = body;
+
+      if (!form_id || !funnel_id) {
+        return new Response(JSON.stringify({ 
+          error: 'Formular-ID und Funnel-ID erforderlich' 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      console.log(`Setting up webhook for form: ${form_id}, funnel: ${funnel_id}`);
+
+      // Get Typeform access token
+      const { data: connection, error: connError } = await supabase
+        .from('typeform_connections')
+        .select('access_token')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .single();
+
+      if (connError || !connection) {
+        return new Response(JSON.stringify({ 
+          error: 'Keine aktive Typeform-Verbindung' 
+        }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Get form details
+      const formResponse = await fetch(`${TYPEFORM_API_URL}/forms/${form_id}`, {
+        headers: {
+          'Authorization': `Bearer ${connection.access_token}`,
+        },
+      });
+
+      if (!formResponse.ok) {
+        return new Response(JSON.stringify({ 
+          error: 'Formular nicht gefunden' 
+        }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const formData: TypeformForm = await formResponse.json();
+
+      // Generate unique webhook tag
+      const webhookTag = `clarity_${userId.substring(0, 8)}_${Date.now()}`;
+      
+      // Webhook URL (points to typeform-webhook Edge Function)
+      const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/typeform-webhook`;
+
+      // Create webhook via Typeform API
+      console.log(`Creating webhook with tag: ${webhookTag}`);
+      const webhookResponse = await fetch(
+        `${TYPEFORM_API_URL}/forms/${form_id}/webhooks/${webhookTag}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${connection.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            url: webhookUrl,
+            enabled: true,
+          }),
+        }
+      );
+
+      if (!webhookResponse.ok) {
+        const errorText = await webhookResponse.text();
+        console.error('Failed to create webhook:', errorText);
+        return new Response(JSON.stringify({ 
+          error: 'Webhook konnte nicht erstellt werden' 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const webhookData: TypeformWebhookResponse = await webhookResponse.json();
+      console.log(`✅ Webhook created: ${webhookData.id}`);
+
+      // Save form mapping to database
+      const { error: dbError } = await supabase
+        .from('typeform_forms')
+        .upsert({
+          user_id: userId,
+          form_id: form_id,
+          form_title: formData.title,
+          form_url: formData.self?.href || null,
+          fields: formData.fields,
+          funnel_id: funnel_id,
+          qualification_field_id: qualification_field_id || null,
+          qualifying_answers: qualifying_answers || null,
+          webhook_id: webhookData.id,
+          webhook_tag: webhookTag,
+          is_active: true,
+        }, {
+          onConflict: 'user_id,form_id',
+        });
+
+      if (dbError) {
+        console.error('Database error:', dbError);
+        return new Response(JSON.stringify({ 
+          error: 'Datenbank-Fehler beim Speichern' 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      console.log('✅ Form mapping saved to database');
+
+      return new Response(JSON.stringify({ 
+        success: true,
+        webhook_id: webhookData.id,
+        form_title: formData.title,
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Invalid action
+    return new Response(JSON.stringify({ 
+      error: 'Ungültige Aktion. Verwenden Sie "fetch_forms" oder "setup_webhook"' 
+    }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+
+  } catch (error) {
+    console.error('❌ Error in typeform-sync:', error);
+    return new Response(JSON.stringify({ 
+      error: error.message 
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+});

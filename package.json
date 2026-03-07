@@ -1,0 +1,35 @@
+{
+  "name": "clarity-funnel-tracker",
+  "version": "4.0.0",
+  "description": "Multi-Funnel Tracking System with CSV Import",
+  "main": "index.html",
+  "type": "module",
+  "scripts": {
+    "dev": "npx http-server -p 5173 -c-1",
+    "start": "npx http-server -p 5173 -c-1",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:all": "npm test && npm run test:e2e",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "functions:serve": "supabase functions serve"
+  },
+  "keywords": [
+    "funnel",
+    "tracking",
+    "analytics"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.41.0",
+    "@vitest/coverage-v8": "^1.2.0",
+    "dotenv": "^17.3.1",
+    "jsdom": "^24.0.0",
+    "vitest": "^1.2.0"
+  }
+}
