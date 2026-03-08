@@ -908,26 +908,30 @@
 
         const { data: events, error } = await window.SupabaseClient
           .from('events')
-          .select('funnel_id, event_date, event_type')
+          .select('funnel_id, event_date, event_type, lead_id')
           .in('event_type', ['survey', 'surveyQuali'])
           .not('funnel_id', 'is', null)
           .gte('event_date', startDate.toISOString().split('T')[0]);
 
         if (error || !events || events.length === 0) return;
 
-        // Aggregate by funnel_id + date (normalize timestamp to YYYY-MM-DD)
+        // Aggregate by funnel_id + date, deduplicate by lead_id per day
+        // Same person submitting twice on the same day = 1 survey
+        // Same person on different days = counted separately per day
         const agg = {};
         events.forEach(ev => {
           const dateKey = String(ev.event_date).substring(0, 10);
           const key = `${ev.funnel_id}__${dateKey}`;
-          if (!agg[key]) agg[key] = { funnelId: ev.funnel_id, date: dateKey, survey: 0, surveyQuali: 0 };
-          agg[key].survey++;
-          if (ev.event_type === 'surveyQuali') agg[key].surveyQuali++;
+          if (!agg[key]) agg[key] = { funnelId: ev.funnel_id, date: dateKey, surveyLeads: new Set(), surveyQualiLeads: new Set() };
+          if (ev.lead_id) agg[key].surveyLeads.add(ev.lead_id);
+          if (ev.event_type === 'surveyQuali' && ev.lead_id) agg[key].surveyQualiLeads.add(ev.lead_id);
         });
 
         // Write to tracking sheets
         const batchRecords = [];
-        Object.values(agg).forEach(({ funnelId, date, survey, surveyQuali }) => {
+        Object.values(agg).forEach(({ funnelId, date, surveyLeads, surveyQualiLeads }) => {
+          const survey = surveyLeads.size;
+          const surveyQuali = surveyQualiLeads.size;
           // Parse date safely - event_date can be 'YYYY-MM-DD' or 'YYYY-MM-DDT...' timestamp
           const dateStr = String(date).substring(0, 10);
           const [year, monthStr, dayStr] = dateStr.split('-');
