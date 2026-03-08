@@ -161,11 +161,20 @@ serve(async (req) => {
       // Update existing lead
       leadId = existingLead.id;
       console.log('Updating existing lead:', leadId);
-      
+
       const updateData: any = {
         updated_at: new Date().toISOString(),
+        // Merge new survey answers into existing metadata so the Survey tab stays populated
+        metadata: {
+          ...(existingLead.metadata || {}),
+          typeform_answers: {
+            ...((existingLead.metadata?.typeform_answers) || {}),
+            ...surveyAnswers,
+          },
+          typeform_last_submitted_at: form_response.submitted_at,
+        },
       };
-      
+
       if (leadData.name && !existingLead.full_name) {
         updateData.full_name = leadData.name;
       }
@@ -220,7 +229,7 @@ serve(async (req) => {
     // Check qualification
     const isQualified = checkQualification(
       form_response.answers,
-      mapping.qualification_question_id,
+      mapping.qualification_field_id, // column name in typeform_forms table
       mapping.qualifying_answers
     );
 
@@ -242,7 +251,8 @@ serve(async (req) => {
           form_id: formId,
           response_id: responseId,
           form_title: form_response.definition.title,
-          answers: form_response.answers,
+          typeform_answers: surveyAnswers, // formatted key-value, matches what UI checks for
+          answers: form_response.answers,  // raw array, kept for reference
           hidden_fields: form_response.hidden || {},
         },
       })
