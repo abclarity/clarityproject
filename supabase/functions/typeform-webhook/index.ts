@@ -137,10 +137,16 @@ serve(async (req) => {
 
     // Extract lead data from answers
     const leadData = extractLeadData(form_response.answers);
-    
-    // Extract survey answers (all non-system fields)
-    const surveyAnswers = extractSurveyAnswers(form_response.answers);
-    
+
+    // Extract survey answers, filtered to selected_questions if configured
+    const allSurveyAnswers = extractSurveyAnswers(form_response.answers);
+    const surveyAnswers = filterBySelectedQuestions(
+      allSurveyAnswers,
+      form_response.answers,
+      mapping.selected_questions || null,
+      mapping.fields || []
+    );
+
     if (!leadData.email) {
       throw new Error('No email found in form submission');
     }
@@ -444,4 +450,42 @@ function checkQualification(
   console.log('Is qualified:', isQualified);
 
   return isQualified;
+}
+
+// Helper: Filter survey answers to only the questions selected during import
+// selected_questions format: { "field_id": "Short Label" }
+// Falls back to all answers if no selection configured
+function filterBySelectedQuestions(
+  allAnswers: Record<string, string>,
+  rawAnswers: TypeformAnswer[],
+  selectedQuestions: Record<string, string> | null,
+  formFields: Array<{ id: string; title: string; type: string }>
+): Record<string, string> {
+  if (!selectedQuestions || Object.keys(selectedQuestions).length === 0) {
+    return allAnswers; // no filter configured → return everything
+  }
+
+  const filtered: Record<string, string> = {};
+  for (const [fieldId, label] of Object.entries(selectedQuestions)) {
+    // Find value from raw answers by field id
+    const raw = rawAnswers.find(a => a.field.id === fieldId);
+    if (!raw) continue;
+
+    let value: string | undefined;
+    if (raw.type === 'text' && raw.text) value = raw.text;
+    else if (raw.type === 'email' && raw.email) value = raw.email;
+    else if (raw.type === 'phone_number' && raw.phone_number) value = raw.phone_number;
+    else if (raw.type === 'choice' && raw.choice) value = raw.choice.label;
+    else if (raw.type === 'choices' && raw.choices) value = raw.choices.labels.join(', ');
+    else if (raw.type === 'boolean' && raw.boolean !== undefined) value = raw.boolean ? 'Ja' : 'Nein';
+    else if (raw.type === 'number' && raw.number !== undefined) value = String(raw.number);
+
+    if (value !== undefined) {
+      // Use custom label if it's different from the field_id, else use field title
+      const field = formFields.find(f => f.id === fieldId);
+      const questionLabel = (label && label !== fieldId) ? label : (field?.title || fieldId);
+      filtered[questionLabel] = value;
+    }
+  }
+  return filtered;
 }

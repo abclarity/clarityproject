@@ -331,12 +331,22 @@ Deno.serve(async (req) => {
         .single();
 
       if (mappingError || !formMapping) {
-        return new Response(JSON.stringify({ 
-          error: 'Formular nicht verbunden. Bitte zuerst Webhook einrichten.' 
+        return new Response(JSON.stringify({
+          error: 'Formular nicht verbunden. Bitte zuerst Webhook einrichten.'
         }), {
           status: 404,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+      }
+
+      // Persist selected_questions so the webhook can use them for future submissions
+      if (selected_questions && Object.keys(selected_questions).length > 0) {
+        await supabase
+          .from('typeform_forms')
+          .update({ selected_questions })
+          .eq('user_id', userId)
+          .eq('form_id', form_id);
+        console.log(`Saved ${Object.keys(selected_questions).length} selected_questions to typeform_forms`);
       }
 
       // Calculate date range
