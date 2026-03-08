@@ -1373,6 +1373,7 @@
             revenue,
             cash,
             metadata,
+            is_spam,
             created_at,
             leads!inner (
               id,
@@ -1467,6 +1468,7 @@
             source: event.event_source,
             revenue: event.revenue,
             cash: event.cash,
+            is_spam: event.is_spam,
             created_at: event.created_at
           };
           const row = this.createDataRow(item);
@@ -1602,11 +1604,15 @@
         funnelDisplay = funnel ? funnel.name : item.funnel_id;
       }
 
+      const spamBadge = item.is_spam
+        ? `<span class="spam-badge" title="Als Spam erkannt – wird nicht im Tracking Sheet gezählt">🚫 Spam</span>`
+        : '';
+
       tr.innerHTML = `
         <td class="checkbox-col">
           <input type="checkbox" class="lead-checkbox" data-lead-id="${item.lead_id}" ${isChecked ? 'checked' : ''} />
         </td>
-        <td>${item.lead_name || '-'}</td>
+        <td>${spamBadge}${item.lead_name || '-'}</td>
         <td>${item.lead_email || '-'}</td>
         <td>${item.lead_phone || '-'}</td>
         <td>${eventDate}</td>
@@ -1801,6 +1807,7 @@
             source: event.event_source,
             revenue: event.revenue,
             cash: event.cash,
+            is_spam: event.is_spam,
             created_at: event.created_at
           };
           const row = this.createDataRow(item);

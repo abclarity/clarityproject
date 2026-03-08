@@ -911,6 +911,7 @@
           .select('funnel_id, event_date, event_type, lead_id')
           .in('event_type', ['survey', 'surveyQuali'])
           .not('funnel_id', 'is', null)
+          .or('is_spam.is.null,is_spam.eq.false')
           .gte('event_date', startDate.toISOString().split('T')[0]);
 
         if (error || !events || events.length === 0) return;

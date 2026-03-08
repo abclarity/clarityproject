@@ -154,6 +154,12 @@ serve(async (req) => {
     // Get funnel_id from hidden fields or mapping
     const funnelId = form_response.hidden?.funnel_id || mapping.funnel_id;
 
+    // Spam detection
+    const spam = detectSpam(leadData.name || null, leadData.email, leadData.phone || null, surveyAnswers);
+    if (spam.isSpam) {
+      console.log(`🚫 Spam detected (score ${spam.score}): ${spam.reasons.join(', ')}`);
+    }
+
     // Check if lead already exists
     const { data: existingLead } = await supabase
       .from('leads')
@@ -170,6 +176,7 @@ serve(async (req) => {
 
       const updateData: any = {
         updated_at: new Date().toISOString(),
+        is_spam: spam.isSpam,
         // Merge new survey answers into existing metadata so the Survey tab stays populated
         metadata: {
           ...(existingLead.metadata || {}),
@@ -178,6 +185,7 @@ serve(async (req) => {
             ...surveyAnswers,
           },
           typeform_last_submitted_at: form_response.submitted_at,
+          ...(spam.isSpam ? { spam_reasons: spam.reasons, spam_score: spam.score } : {}),
         },
       };
 
@@ -196,7 +204,7 @@ serve(async (req) => {
     } else {
       // Create new lead
       console.log('Creating new lead:', leadData.email);
-      
+
       const { data: newLead, error: leadError } = await supabase
         .from('leads')
         .insert({
@@ -209,7 +217,8 @@ serve(async (req) => {
           funnel_id: funnelId,
           source: 'typeform',
           lead_source: 'typeform',
-          lead_status: 'new',
+          lead_status: spam.isSpam ? 'spam' : 'new',
+          is_spam: spam.isSpam,
           utm_campaign: form_response.hidden?.utm_campaign || null,
           utm_source: form_response.hidden?.utm_source || null,
           utm_medium: form_response.hidden?.utm_medium || null,
@@ -218,6 +227,7 @@ serve(async (req) => {
             typeform_response_id: responseId,
             typeform_submitted_at: form_response.submitted_at,
             typeform_answers: surveyAnswers,
+            ...(spam.isSpam ? { spam_reasons: spam.reasons, spam_score: spam.score } : {}),
           },
           created_at: form_response.submitted_at,
         })
@@ -253,6 +263,7 @@ serve(async (req) => {
         event_date: form_response.submitted_at,
         funnel_id: funnelId,
         event_source: 'typeform',
+        is_spam: spam.isSpam,
         metadata: {
           form_id: formId,
           response_id: responseId,
@@ -450,6 +461,77 @@ function checkQualification(
   console.log('Is qualified:', isQualified);
 
   return isQualified;
+}
+
+// Helper: Spam detection – score-based, threshold = 3
+// Returns isSpam=true only when multiple signals combine (conservative to avoid false positives)
+interface SpamResult { isSpam: boolean; score: number; reasons: string[]; }
+
+function detectSpam(
+  name: string | null,
+  email: string,
+  phone: string | null,
+  surveyAnswers: Record<string, string>
+): SpamResult {
+  const reasons: string[] = [];
+  let score = 0;
+
+  const n = (name || '').toLowerCase().trim();
+  const emailLower = email.toLowerCase().trim();
+  const local = emailLower.split('@')[0] || '';
+  const domain = emailLower.split('@')[1] || '';
+  const answers = Object.values(surveyAnswers).join(' ').toLowerCase();
+  const digits = (phone || '').replace(/\D/g, '');
+  const VOWELS = /[aeiou]/;
+  const CONS4 = /[bcdfghjklmnpqrstvwxyz]{4,}/i;
+
+  // ── Hard rules (+3 each → instant spam at threshold 3) ─────────────────────
+  if (/\btest\b/.test(n)) { score += 3; reasons.push('name contains "test"'); }
+
+  if (['test','fake','spam','xyz','asdf'].includes(local)) {
+    score += 3; reasons.push(`email local is "${local}"`);
+  }
+
+  const TEST_DOMAINS = ['test.com','test.de','test.org','test.net','example.com','example.de','example.org'];
+  if (TEST_DOMAINS.includes(domain)) { score += 3; reasons.push(`test domain "${domain}"`); }
+
+  if (/\b(scam|abzocken|spam)\b/.test(answers)) { score += 3; reasons.push('spam keyword in answers'); }
+  if (/\b(fake|fuck|shit|scam|spam|hurensohn|arschloch)\b/.test(n)) { score += 3; reasons.push('profanity/spam in name'); }
+  if (/\b(blabla|blablabla|xyz)\b/.test(n)) { score += 3; reasons.push('obvious fake name pattern'); }
+
+  // Phone clearly too short (real DE numbers ≥ 10 digits total incl. country code)
+  if (digits.length > 0 && digits.length < 6) { score += 3; reasons.push(`phone too short (${digits.length} digits)`); }
+
+  // ── Scoring rules (+1/+2) ─────────────────────────────────────────────────
+  // Suspicious email domain: SLD or TLD is 1 char (g.g, a@b.de)
+  const parts = domain.split('.');
+  if (parts.length >= 2 && (parts[parts.length - 2].length <= 1 || parts[parts.length - 1].length <= 1)) {
+    score += 2; reasons.push(`suspicious domain "${domain}"`);
+  }
+
+  // Keyboard mash: 4+ consecutive consonants in name
+  if (CONS4.test(n)) { score += 2; reasons.push('keyboard mash in name'); }
+
+  // Name has a part ≥ 3 chars with zero vowels (e.g. "hhh", "sfsdfs")
+  const hasAllConsonantPart = n.split(/\s+/).some(p => p.length >= 3 && !VOWELS.test(p));
+  if (hasAllConsonantPart) { score += 2; reasons.push('consonant-only word in name'); }
+
+  // All name parts are single letters ("G G", "H H")
+  const nameParts = n.split(/\s+/).filter(p => p.length > 0);
+  if (nameParts.length >= 2 && nameParts.every(p => p.length === 1)) {
+    score += 2; reasons.push('name is only single letters');
+  }
+
+  // Phone: all same digit (111111, 999999)
+  if (digits.length >= 5 && new Set(digits).size === 1) { score += 2; reasons.push('phone all same digit'); }
+
+  // Keyboard mash in email local part
+  if (CONS4.test(local)) { score += 1; reasons.push('keyboard mash in email'); }
+
+  // Keyboard mash in survey answers
+  if (CONS4.test(answers)) { score += 1; reasons.push('keyboard mash in answers'); }
+
+  return { isSpam: score >= 3, score, reasons };
 }
 
 // Helper: Filter survey answers to only the questions selected during import

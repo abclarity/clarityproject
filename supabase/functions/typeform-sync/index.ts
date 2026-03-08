@@ -484,10 +484,15 @@ Deno.serve(async (req) => {
             console.log(`No qualification configured → treating as unqualified survey`);
           }
 
+          // Spam detection
+          const spam = detectSpam(name, email, phone, filteredSurveyAnswers);
+          if (spam.isSpam) {
+            console.log(`🚫 Spam detected (score ${spam.score}): ${spam.reasons.join(', ')}`);
+          }
+
           console.log(`Creating lead for email: ${email}`);
 
           // Create/update lead with all extracted data
-          // Only include typeform_answers in metadata if survey questions were selected
           const leadMetadata: Record<string, any> = {
             typeform_response_id: response.response_id,
             typeform_form_id: form_id,
@@ -495,9 +500,12 @@ Deno.serve(async (req) => {
             imported_at: new Date().toISOString(),
           };
 
-          // Add filtered survey answers only if questions were selected
           if (selected_questions && Object.keys(filteredSurveyAnswers).length > 0) {
             leadMetadata.typeform_answers = filteredSurveyAnswers;
+          }
+          if (spam.isSpam) {
+            leadMetadata.spam_reasons = spam.reasons;
+            leadMetadata.spam_score = spam.score;
           }
 
           const { data: lead, error: leadError } = await supabase
@@ -512,7 +520,8 @@ Deno.serve(async (req) => {
               source: 'typeform',
               funnel_id: formMapping.funnel_id,
               lead_source: 'typeform',
-              lead_status: 'new',
+              lead_status: spam.isSpam ? 'spam' : 'new',
+              is_spam: spam.isSpam,
               metadata: leadMetadata,
               created_at: response.submitted_at || new Date().toISOString(),
             }, {
@@ -530,10 +539,10 @@ Deno.serve(async (req) => {
 
           console.log(`✅ Lead created/updated: ${lead.id}`);
 
-          // Create event
+          // Create event (always, so spam leads are visible in Datenpool with badge)
           const eventType = isQualified ? 'surveyQuali' : 'survey';
-          console.log(`Creating event: ${eventType}`);
-          
+          console.log(`Creating event: ${eventType}${spam.isSpam ? ' [SPAM]' : ''}`);
+
           const { error: eventError } = await supabase
             .from('events')
             .insert({
@@ -543,6 +552,7 @@ Deno.serve(async (req) => {
               event_type: eventType,
               event_date: response.submitted_at || new Date().toISOString(),
               event_source: 'typeform',
+              is_spam: spam.isSpam,
             });
 
           if (eventError) {
@@ -676,11 +686,74 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('❌ Error in typeform-sync:', error);
-    return new Response(JSON.stringify({ 
-      error: error.message 
+    return new Response(JSON.stringify({
+      error: error.message
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
+
+// ─── Spam detection (shared with typeform-webhook) ────────────────────────────
+// Score threshold = 3. Conservative: only flags clear-cut fakes to avoid
+// incorrectly excluding real leads.
+interface SpamResult { isSpam: boolean; score: number; reasons: string[]; }
+
+function detectSpam(
+  name: string | null,
+  email: string,
+  phone: string | null,
+  surveyAnswers: Record<string, string>
+): SpamResult {
+  const reasons: string[] = [];
+  let score = 0;
+
+  const n = (name || '').toLowerCase().trim();
+  const emailLower = email.toLowerCase().trim();
+  const local = emailLower.split('@')[0] || '';
+  const domain = emailLower.split('@')[1] || '';
+  const answers = Object.values(surveyAnswers).join(' ').toLowerCase();
+  const digits = (phone || '').replace(/\D/g, '');
+  const VOWELS = /[aeiou]/;
+  const CONS4 = /[bcdfghjklmnpqrstvwxyz]{4,}/i;
+
+  // ── Hard rules (+3 each → instant spam at threshold 3) ─────────────────────
+  if (/\btest\b/.test(n)) { score += 3; reasons.push('name contains "test"'); }
+
+  if (['test','fake','spam','xyz','asdf'].includes(local)) {
+    score += 3; reasons.push(`email local is "${local}"`);
+  }
+
+  const TEST_DOMAINS = ['test.com','test.de','test.org','test.net','example.com','example.de','example.org'];
+  if (TEST_DOMAINS.includes(domain)) { score += 3; reasons.push(`test domain "${domain}"`); }
+
+  if (/\b(scam|abzocken|spam)\b/.test(answers)) { score += 3; reasons.push('spam keyword in answers'); }
+  if (/\b(fake|fuck|shit|scam|spam|hurensohn|arschloch)\b/.test(n)) { score += 3; reasons.push('profanity/spam in name'); }
+  if (/\b(blabla|blablabla|xyz)\b/.test(n)) { score += 3; reasons.push('obvious fake name pattern'); }
+
+  if (digits.length > 0 && digits.length < 6) { score += 3; reasons.push(`phone too short (${digits.length} digits)`); }
+
+  // ── Scoring rules (+1/+2) ─────────────────────────────────────────────────
+  const parts = domain.split('.');
+  if (parts.length >= 2 && (parts[parts.length - 2].length <= 1 || parts[parts.length - 1].length <= 1)) {
+    score += 2; reasons.push(`suspicious domain "${domain}"`);
+  }
+
+  if (CONS4.test(n)) { score += 2; reasons.push('keyboard mash in name'); }
+
+  const hasAllConsonantPart = n.split(/\s+/).some(p => p.length >= 3 && !VOWELS.test(p));
+  if (hasAllConsonantPart) { score += 2; reasons.push('consonant-only word in name'); }
+
+  const nameParts = n.split(/\s+/).filter(p => p.length > 0);
+  if (nameParts.length >= 2 && nameParts.every(p => p.length === 1)) {
+    score += 2; reasons.push('name is only single letters');
+  }
+
+  if (digits.length >= 5 && new Set(digits).size === 1) { score += 2; reasons.push('phone all same digit'); }
+
+  if (CONS4.test(local)) { score += 1; reasons.push('keyboard mash in email'); }
+  if (CONS4.test(answers)) { score += 1; reasons.push('keyboard mash in answers'); }
+
+  return { isSpam: score >= 3, score, reasons };
+}
