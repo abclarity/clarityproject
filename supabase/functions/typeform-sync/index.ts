@@ -392,102 +392,96 @@ Deno.serve(async (req) => {
       for (const response of responses) {
         try {
           console.log(`\n=== Processing response ${response.response_id} ===`);
-          // Check if already processed (use maybeSingle to avoid error on no match)
-          const { data: existing, error: existError } = await supabase
-            .from('typeform_events_log')
-            .select('response_id')
-            .eq('response_id', response.response_id)
-            .maybeSingle();
 
-          if (existing && !existError) {
-            console.log(`Skipping ${response.response_id}: Already processed`);
-            skippedCount++;
-            continue; // Already processed
-          }
-
-          console.log(`Not a duplicate, proceeding with import...`);
-
-          // Extract answers into key-value map with human-readable labels
+          // ── Extract all data first (needed for spam check even on skip) ──────
           const answers: Record<string, any> = {};
-          const answersWithLabels: Record<string, any> = {};
-          
           for (const answer of response.answers || []) {
             const field = answer.field;
             const fieldId = field.id;
             let value = answer[answer.type]; // email, text, choice, etc.
-            
-            // Extract label from choice/multiple_choice objects
-            if (value && typeof value === 'object' && value.label) {
-              value = value.label;
-            }
-            
+            if (value && typeof value === 'object' && value.label) value = value.label;
             answers[fieldId] = value;
-            answersWithLabels[field.title || fieldId] = value;
           }
 
-          // Filter survey answers based on selected_questions (if provided)
-          // selected_questions format: { "field_id": "Short Label" } or { "field_id": "field_id" }
+          // Filter survey answers based on selected_questions
           let filteredSurveyAnswers: Record<string, any> = {};
-          
           if (selected_questions && Object.keys(selected_questions).length > 0) {
-            console.log(`Filtering survey answers based on ${Object.keys(selected_questions).length} selected questions`);
-            
             for (const [fieldId, label] of Object.entries(selected_questions)) {
               if (answers[fieldId] !== undefined) {
-                // Use custom label or fallback to field title
                 const field = formMapping.fields?.find((f: any) => f.id === fieldId);
                 const questionLabel = (label && label !== fieldId) ? label : (field?.title || fieldId);
                 filteredSurveyAnswers[questionLabel] = answers[fieldId];
               }
             }
-            console.log(`Filtered survey answers:`, filteredSurveyAnswers);
           }
 
           console.log(`Extracted ${Object.keys(answers).length} answers`);
-          console.log(`Form fields:`, formMapping.fields);
 
           // Extract email (required)
           const emailField = formMapping.fields?.find((f: any) => f.type === 'email');
-          console.log(`Email field found:`, emailField);
-          
           const email = emailField ? answers[emailField.id] : null;
-          console.log(`Extracted email:`, email);
-
           if (!email) {
             console.log(`❌ Skipping response ${response.response_id}: No email found`);
             errorCount++;
             continue;
           }
 
-          // Extract phone (optional)
+          // Extract phone and name (optional)
           const phoneField = formMapping.fields?.find((f: any) => f.type === 'phone_number');
           const phone = phoneField ? answers[phoneField.id] : null;
-          console.log(`Extracted phone:`, phone);
-
-          // Extract name (optional, try multiple field types)
-          const nameField = formMapping.fields?.find((f: any) => 
-            f.type === 'short_text' && 
+          const nameField = formMapping.fields?.find((f: any) =>
+            f.type === 'short_text' &&
             (f.title?.toLowerCase().includes('name') || f.title?.toLowerCase().includes('vorname'))
           );
           const name = nameField ? answers[nameField.id] : null;
-          console.log(`Extracted name:`, name);
+
+          // Spam detection (run always so we can update existing leads too)
+          const spam = detectSpam(name, email, phone, filteredSurveyAnswers);
+          if (spam.isSpam) {
+            console.log(`🚫 Spam detected (score ${spam.score}): ${spam.reasons.join(', ')}`);
+          }
+
+          // ── Check if already processed ───────────────────────────────────────
+          const { data: existing, error: existError } = await supabase
+            .from('typeform_events_log')
+            .select('response_id, lead_id, event_id')
+            .eq('response_id', response.response_id)
+            .maybeSingle();
+
+          if (existing && !existError) {
+            if (!existing.lead_id) {
+              // Lead was deleted → clear stale log entry and re-process
+              console.log(`Lead was deleted for ${response.response_id}, clearing stale log and re-processing`);
+              await supabase.from('typeform_events_log').delete().eq('response_id', response.response_id);
+              // fall through to full import below
+            } else {
+              // Lead still exists → re-evaluate spam and update if needed
+              console.log(`Already processed ${response.response_id} (lead ${existing.lead_id}), re-evaluating spam...`);
+              if (spam.isSpam) {
+                await supabase.from('leads').update({
+                  is_spam: true,
+                  lead_status: 'spam',
+                }).eq('id', existing.lead_id);
+                if (existing.event_id) {
+                  await supabase.from('events').update({ is_spam: true }).eq('id', existing.event_id);
+                }
+                console.log(`🚫 Updated existing lead ${existing.lead_id} to spam`);
+              }
+              skippedCount++;
+              continue;
+            }
+          }
+
+          console.log(`Not a duplicate, proceeding with import...`);
 
           // Check qualification
-          // Default: if no qualification configured, treat as unqualified survey
           let isQualified = false;
-          
           if (formMapping.qualification_field_id && formMapping.qualifying_answers) {
             const qualAnswer = answers[formMapping.qualification_field_id];
             isQualified = formMapping.qualifying_answers.includes(qualAnswer);
             console.log(`Qualification check: ${qualAnswer} → ${isQualified ? 'QUALIFIED' : 'NOT QUALIFIED'}`);
           } else {
             console.log(`No qualification configured → treating as unqualified survey`);
-          }
-
-          // Spam detection
-          const spam = detectSpam(name, email, phone, filteredSurveyAnswers);
-          if (spam.isSpam) {
-            console.log(`🚫 Spam detected (score ${spam.score}): ${spam.reasons.join(', ')}`);
           }
 
           console.log(`Creating lead for email: ${email}`);
@@ -715,7 +709,7 @@ function detectSpam(
   const domain = emailLower.split('@')[1] || '';
   const answers = Object.values(surveyAnswers).join(' ').toLowerCase();
   const digits = (phone || '').replace(/\D/g, '');
-  const VOWELS = /[aeiou]/;
+  const VOWELS = /[aeiouäöüàáâãèéêëìíîïòóôõùúûýæœ]/i;
   const CONS4 = /[bcdfghjklmnpqrstvwxyz]{4,}/i;
 
   // ── Hard rules (+3 each → instant spam at threshold 3) ─────────────────────
@@ -736,13 +730,17 @@ function detectSpam(
 
   // ── Scoring rules (+1/+2) ─────────────────────────────────────────────────
   const parts = domain.split('.');
-  if (parts.length >= 2 && (parts[parts.length - 2].length <= 1 || parts[parts.length - 1].length <= 1)) {
+  // Hard rule: both SLD and TLD are single chars (g.g, a.b) → instant spam
+  if (parts.length >= 2 && parts[parts.length - 2].length <= 1 && parts[parts.length - 1].length <= 1) {
+    score += 3; reasons.push(`both SLD and TLD are 1 char "${domain}"`);
+  } else if (parts.length >= 2 && (parts[parts.length - 2].length <= 1 || parts[parts.length - 1].length <= 1)) {
     score += 2; reasons.push(`suspicious domain "${domain}"`);
   }
 
   if (CONS4.test(n)) { score += 2; reasons.push('keyboard mash in name'); }
 
-  const hasAllConsonantPart = n.split(/\s+/).some(p => p.length >= 3 && !VOWELS.test(p));
+  // Name has a part ≥ 2 chars with zero vowels (e.g. "ds", "hhh", "sfsdfs")
+  const hasAllConsonantPart = n.split(/\s+/).some(p => p.length >= 2 && !VOWELS.test(p));
   if (hasAllConsonantPart) { score += 2; reasons.push('consonant-only word in name'); }
 
   const nameParts = n.split(/\s+/).filter(p => p.length > 0);
@@ -752,8 +750,18 @@ function detectSpam(
 
   if (digits.length >= 5 && new Set(digits).size === 1) { score += 2; reasons.push('phone all same digit'); }
 
-  if (CONS4.test(local)) { score += 1; reasons.push('keyboard mash in email'); }
+  // Single-char name (any letter — "A", "J", "H") is suspicious as a full name
+  if (n.length === 1) { score += 3; reasons.push('single letter as name'); }
+
+  // Keyboard mash in email local part (3+ consecutive consonants)
+  if (/[bcdfghjklmnpqrstvwxyz]{3,}/i.test(local)) { score += 1; reasons.push('keyboard mash in email'); }
   if (CONS4.test(answers)) { score += 1; reasons.push('keyboard mash in answers'); }
+
+  // Any individual answer that contains zero vowels (e.g. "Ff", "ds", "byjyk")
+  const anyAnswerNoVowels = Object.values(surveyAnswers).some((v: any) =>
+    typeof v === 'string' && v.trim().length >= 2 && !VOWELS.test(v)
+  );
+  if (anyAnswerNoVowels) { score += 2; reasons.push('answer with no vowels'); }
 
   return { isSpam: score >= 3, score, reasons };
 }

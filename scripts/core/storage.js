@@ -172,6 +172,8 @@
 
   /**
    * Hole alle verfügbaren Monate für einen Funnel
+   * Kombiniert tracking_data (manuell eingetragene Daten) und
+   * tracking_sheet_data (auto-sync Daten wie Typeform, Facebook)
    */
   async function getAvailableMonthsForFunnel(funnelId) {
     try {
@@ -181,25 +183,38 @@
         return getAvailableMonthsFromLocalStorage(funnelId);
       }
 
-      // Lade alle Monate für diesen Funnel
-      const { data, error } = await window.SupabaseClient
-        .from('tracking_data')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('funnel_id', funnelId)
-        .order('year', { ascending: false })
-        .order('month', { ascending: false });
+      // Beide Tabellen parallel abfragen
+      const [legacyResult, cellResult] = await Promise.all([
+        window.SupabaseClient
+          .from('tracking_data')
+          .select('year, month')
+          .eq('user_id', userId)
+          .eq('funnel_id', funnelId),
+        window.SupabaseClient
+          .from('tracking_sheet_data')
+          .select('year, month')
+          .eq('user_id', userId)
+          .eq('funnel_id', funnelId)
+      ]);
 
-      if (error) {
-        console.error(`❌ Error loading months for ${funnelId}:`, error);
-        return getAvailableMonthsFromLocalStorage(funnelId);
-      }
+      // Monate aus beiden Quellen mergen und deduplizieren
+      const seen = new Set();
+      const months = [];
+      const addMonths = (rows) => {
+        if (!rows) return;
+        rows.forEach(row => {
+          const key = `${row.year}_${row.month}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            months.push({ y: row.year, m: row.month });
+          }
+        });
+      };
+      addMonths(legacyResult.data);
+      addMonths(cellResult.data);
 
-      if (!data || data.length === 0) {
-        return [];
-      }
-
-      const months = data.map(row => ({ y: row.year, m: row.month }));
+      // Sortiere absteigend (neueste zuerst)
+      months.sort((a, b) => b.y !== a.y ? b.y - a.y : b.m - a.m);
       return months;
 
     } catch (err) {

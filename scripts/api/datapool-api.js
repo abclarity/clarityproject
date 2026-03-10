@@ -15,6 +15,33 @@
     { id: 'unit', label: 'Units', icon: '💰' }
   ];
 
+  // Maps module IDs → which event types they require in the Datenpool
+  const MODULE_TO_EVENT_TYPES = {
+    'paid-ads': [], 'organic': [], 'cold-email': [], 'cold-calls': [],
+    'classic-vsl': ['lead', 'survey'], 'classic-vsl-organic': ['lead', 'survey'],
+    'direct-vsl': ['survey'], 'direct-vsl-organic': ['survey'],
+    'classic-vsl-no-survey': ['lead'], 'classic-vsl-no-survey-organic': ['lead'], 'direct-no-survey': ['lead'],
+    'survey-qualified': ['survey', 'surveyQuali'], 'survey-qualified-organic': ['survey', 'surveyQuali'],
+    'survey-unqualified': ['survey'], 'no-survey': [],
+    'direct-call-booking': ['settingBooking', 'settingTermin', 'settingCall'],
+    'direct-call-booking-coldcalls': ['settingBooking', 'settingTermin', 'settingCall'],
+    'direct-call-booking-coldcalls-withclicks': ['settingBooking', 'settingTermin', 'settingCall'],
+    '1-call-close': ['closingBooking', 'closingTermin', 'closingCall'],
+    '1-call-close-organic': ['closingBooking', 'closingTermin', 'closingCall'],
+    '2-call-close': ['settingBooking', 'settingTermin', 'settingCall', 'closingBooking', 'closingTermin', 'closingCall'],
+    '2-call-close-organic': ['settingBooking', 'settingTermin', 'settingCall', 'closingBooking', 'closingTermin', 'closingCall'],
+    'revenue-paid': ['unit'], 'revenue-organic': ['unit'],
+  };
+
+  function getActiveFunnelEventTypes() {
+    const funnels = window.FunnelAPI?.loadFunnels() || [];
+    if (!funnels.length) return EVENT_TYPES;
+    const needed = new Set();
+    funnels.forEach(f => (f.modules || []).forEach(mid => (MODULE_TO_EVENT_TYPES[mid] || []).forEach(et => needed.add(et))));
+    if (!needed.size) return EVENT_TYPES;
+    return EVENT_TYPES.filter(t => needed.has(t.id));
+  }
+
   const TRAFFIC_SOURCES = [
     { id: 'facebook-ads', label: 'Facebook Ads', icon: '📘' },
     { id: 'google-ads', label: 'Google Ads', icon: '🔍' },
@@ -221,7 +248,7 @@
 
         <div id="conversionsContent" class="datapool-content" style="display: ${this.currentMainTab === 'conversions' ? 'block' : 'none'}">
           <div class="datapool-tabs">
-            ${EVENT_TYPES.map(type => `
+            ${getActiveFunnelEventTypes().map(type => `
               <button class="datapool-tab ${type.id === this.currentTab ? 'active' : ''}"
                       data-tab="${type.id}">
                 ${type.icon} ${type.label}
@@ -295,7 +322,13 @@
       this.loadVisibleColumns(); // Load column preferences
       this.attachListeners();
       this.updateButtonLabels();
-      
+
+      // Ensure currentTab is one of the active event types for this user's funnels
+      const activeFunnelTypes = getActiveFunnelEventTypes();
+      if (!activeFunnelTypes.find(t => t.id === this.currentTab)) {
+        this.currentTab = activeFunnelTypes[0]?.id || 'survey';
+      }
+
       if (this.currentMainTab === 'traffic') {
         // Auto-init Facebook Ads if it's the default selection
         if (this.currentTrafficSource === 'facebook-ads' && this.currentTrafficLevel === 'overview') {
@@ -1720,6 +1753,8 @@
             event_source,
             revenue,
             cash,
+            metadata,
+            is_spam,
             created_at,
             leads!inner (
               id,
@@ -2712,10 +2747,16 @@
       
       try {
         // Query ALL lead IDs for current event type from Supabase
+        // For survey tabs: include both survey+surveyQuali so all typeform leads are captured
+        const surveyTypes = ['survey', 'surveyQuali'];
         let query = window.SupabaseClient
           .from('events')
-          .select('lead_id', { count: 'exact' })
-          .eq('event_type', this.currentTab);
+          .select('lead_id', { count: 'exact' });
+        if (surveyTypes.includes(this.currentTab)) {
+          query = query.in('event_type', surveyTypes);
+        } else {
+          query = query.eq('event_type', this.currentTab);
+        }
 
         // Apply filters if any
         if (this.filters.search) {

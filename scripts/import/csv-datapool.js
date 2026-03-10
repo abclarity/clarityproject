@@ -80,7 +80,7 @@
       const domain = emailLower.split('@')[1] || '';
       const answers = Object.values(surveyAnswers || {}).join(' ').toLowerCase();
       const digits = (phone || '').replace(/\D/g, '');
-      const VOWELS = /[aeiou]/;
+      const VOWELS = /[aeiouäöüàáâãèéêëìíîïòóôõùúûýæœ]/i;
       const CONS4 = /[bcdfghjklmnpqrstvwxyz]{4,}/i;
 
       // Hard rules (+3 → instant spam)
@@ -95,17 +95,29 @@
 
       // Scoring rules (+1/+2)
       const parts = domain.split('.');
-      if (parts.length >= 2 && (parts[parts.length - 2].length <= 1 || parts[parts.length - 1].length <= 1)) {
+      // Hard rule: both SLD and TLD are single chars (g.g, a.b) → instant spam
+      if (parts.length >= 2 && parts[parts.length - 2].length <= 1 && parts[parts.length - 1].length <= 1) {
+        score += 3; reasons.push(`both SLD and TLD are 1 char "${domain}"`);
+      } else if (parts.length >= 2 && (parts[parts.length - 2].length <= 1 || parts[parts.length - 1].length <= 1)) {
         score += 2; reasons.push(`suspicious domain "${domain}"`);
       }
       if (CONS4.test(n)) { score += 2; reasons.push('keyboard mash in name'); }
-      const hasAllConsonantPart = n.split(/\s+/).some(p => p.length >= 3 && !VOWELS.test(p));
+      // Name has a part ≥ 2 chars with zero vowels (e.g. "ds", "hhh", "sfsdfs")
+      const hasAllConsonantPart = n.split(/\s+/).some(p => p.length >= 2 && !VOWELS.test(p));
       if (hasAllConsonantPart) { score += 2; reasons.push('consonant-only word in name'); }
       const nameParts = n.split(/\s+/).filter(p => p.length > 0);
       if (nameParts.length >= 2 && nameParts.every(p => p.length === 1)) { score += 2; reasons.push('name is only single letters'); }
       if (digits.length >= 5 && new Set(digits).size === 1) { score += 2; reasons.push('phone all same digit'); }
-      if (CONS4.test(local)) { score += 1; reasons.push('keyboard mash in email'); }
+      // Single-char name (any letter — "A", "J", "H") is suspicious as a full name
+      if (n.length === 1) { score += 3; reasons.push('single letter as name'); }
+      // Keyboard mash in email local part (3+ consecutive consonants)
+      if (/[bcdfghjklmnpqrstvwxyz]{3,}/i.test(local)) { score += 1; reasons.push('keyboard mash in email'); }
       if (CONS4.test(answers)) { score += 1; reasons.push('keyboard mash in answers'); }
+      // Any individual answer that contains zero vowels (e.g. "Ff", "ds", "byjyk")
+      const anyAnswerNoVowels = Object.values(surveyAnswers || {}).some(v =>
+        typeof v === 'string' && v.trim().length >= 2 && !VOWELS.test(v)
+      );
+      if (anyAnswerNoVowels) { score += 2; reasons.push('answer with no vowels'); }
 
       return { isSpam: score >= 3, score, reasons };
     },
