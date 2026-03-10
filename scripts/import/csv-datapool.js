@@ -69,6 +69,47 @@
       return null;
     },
 
+    // Spam detection – mirrors the same logic in the edge functions (threshold = 3)
+    detectSpam(name, email, phone, surveyAnswers) {
+      const reasons = [];
+      let score = 0;
+
+      const n = (name || '').toLowerCase().trim();
+      const emailLower = (email || '').toLowerCase().trim();
+      const local = emailLower.split('@')[0] || '';
+      const domain = emailLower.split('@')[1] || '';
+      const answers = Object.values(surveyAnswers || {}).join(' ').toLowerCase();
+      const digits = (phone || '').replace(/\D/g, '');
+      const VOWELS = /[aeiou]/;
+      const CONS4 = /[bcdfghjklmnpqrstvwxyz]{4,}/i;
+
+      // Hard rules (+3 → instant spam)
+      if (/\btest\b/.test(n)) { score += 3; reasons.push('name contains "test"'); }
+      if (['test','fake','spam','xyz','asdf'].includes(local)) { score += 3; reasons.push(`email local is "${local}"`); }
+      const TEST_DOMAINS = ['test.com','test.de','test.org','test.net','example.com','example.de','example.org'];
+      if (TEST_DOMAINS.includes(domain)) { score += 3; reasons.push(`test domain "${domain}"`); }
+      if (/\b(scam|abzocken|spam)\b/.test(answers)) { score += 3; reasons.push('spam keyword in answers'); }
+      if (/\b(fake|fuck|shit|scam|spam|hurensohn|arschloch)\b/.test(n)) { score += 3; reasons.push('profanity/spam in name'); }
+      if (/\b(blabla|blablabla|xyz)\b/.test(n)) { score += 3; reasons.push('obvious fake name'); }
+      if (digits.length > 0 && digits.length < 6) { score += 3; reasons.push(`phone too short (${digits.length} digits)`); }
+
+      // Scoring rules (+1/+2)
+      const parts = domain.split('.');
+      if (parts.length >= 2 && (parts[parts.length - 2].length <= 1 || parts[parts.length - 1].length <= 1)) {
+        score += 2; reasons.push(`suspicious domain "${domain}"`);
+      }
+      if (CONS4.test(n)) { score += 2; reasons.push('keyboard mash in name'); }
+      const hasAllConsonantPart = n.split(/\s+/).some(p => p.length >= 3 && !VOWELS.test(p));
+      if (hasAllConsonantPart) { score += 2; reasons.push('consonant-only word in name'); }
+      const nameParts = n.split(/\s+/).filter(p => p.length > 0);
+      if (nameParts.length >= 2 && nameParts.every(p => p.length === 1)) { score += 2; reasons.push('name is only single letters'); }
+      if (digits.length >= 5 && new Set(digits).size === 1) { score += 2; reasons.push('phone all same digit'); }
+      if (CONS4.test(local)) { score += 1; reasons.push('keyboard mash in email'); }
+      if (CONS4.test(answers)) { score += 1; reasons.push('keyboard mash in answers'); }
+
+      return { isSpam: score >= 3, score, reasons };
+    },
+
     openModal(defaultEventType = 'lead') {
       this.defaultEventType = defaultEventType;
       const existingModal = document.getElementById('csvImportDatapoolModal');
@@ -850,6 +891,7 @@
         const eventBatch = [];
         const emailToRowIndices = new Map(); // Map email -> array of row indices
         const seenEmails = new Set(); // Track unique emails in this batch
+        const spamByEmail = new Map(); // email -> spam result
 
         // Prepare batch data
         for (let i = 0; i < batch.length; i++) {
@@ -864,7 +906,7 @@
           }
 
           const emailLower = email.toLowerCase();
-          
+
           // Track all row indices for this email (for multiple events per lead)
           if (!emailToRowIndices.has(emailLower)) {
             emailToRowIndices.set(emailLower, []);
@@ -874,6 +916,17 @@
           // Only add lead once per unique email in this batch
           if (!seenEmails.has(emailLower)) {
             seenEmails.add(emailLower);
+
+            // Collect survey answers from this row for spam detection
+            const rowSurveyAnswers = {};
+            Object.entries(this.surveyQuestions).forEach(([csvColumn, label]) => {
+              const answer = row[csvColumn];
+              if (answer && answer.trim()) rowSurveyAnswers[label] = answer.trim();
+            });
+
+            const spam = this.detectSpam(name || null, email, phone || null, rowSurveyAnswers);
+            spamByEmail.set(emailLower, spam);
+
             leadBatch.push({
               name: name || null,
               emails: [email],
@@ -881,7 +934,9 @@
               primary_email: email,
               primary_phone: phone || null,
               source: row[this.mappedHeaders.source] || null,
-              utm_campaign: row[this.mappedHeaders.utm_campaign] || ''
+              utm_campaign: row[this.mappedHeaders.utm_campaign] || '',
+              is_spam: spam.isSpam,
+              lead_status: spam.isSpam ? 'spam' : 'new',
             });
           }
         }
@@ -982,12 +1037,14 @@
                         }
                       });
 
+                      const isSpamNew = spamByEmail.get(lead.primary_email.toLowerCase())?.isSpam || false;
                       eventBatch.push({
                         user_id: window.AuthAPI.getUserId(),
                         lead_id: lead.id,
                         event_type: this.defaultEventType,
                         event_date: isoDate,
                         source: row[this.mappedHeaders.source] || null,
+                        is_spam: isSpamNew,
                         metadata: Object.keys(surveyAnswers).length > 0 ? { survey_questions: surveyAnswers } : {}
                       });
 
@@ -1006,6 +1063,7 @@
                               event_type: 'survey_qualified',
                               event_date: isoDate,
                               source: row[this.mappedHeaders.source] || null,
+                              is_spam: isSpamNew,
                               metadata: {}
                             });
                           }
@@ -1041,12 +1099,14 @@
                     }
                   });
 
+                  const isSpamExisting = spamByEmail.get(emailOrPhone.toLowerCase())?.isSpam || false;
                   eventBatch.push({
                     user_id: window.AuthAPI.getUserId(),
                     lead_id: leadId,
                     event_type: this.defaultEventType,
                     event_date: isoDate,
                     source: row[this.mappedHeaders.source] || null,
+                    is_spam: isSpamExisting,
                     metadata: Object.keys(surveyAnswers).length > 0 ? { survey_questions: surveyAnswers } : {}
                   });
 
@@ -1065,6 +1125,7 @@
                           event_type: 'survey_qualified',
                           event_date: isoDate,
                           source: row[this.mappedHeaders.source] || null,
+                          is_spam: isSpamExisting,
                           metadata: {}
                         });
                       }
