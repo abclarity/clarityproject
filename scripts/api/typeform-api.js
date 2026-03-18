@@ -298,37 +298,59 @@
         const session = await window.SupabaseClient.auth.getSession();
         const userId = session.data.session?.user?.id;
 
-        // Step 1: Delete typeform_events_log entries FIRST (before leads are gone)
+        // Step 1: Get form's funnel_id and lead IDs BEFORE deleting log
+        const { data: formMapping } = await window.SupabaseClient
+          .from('typeform_forms')
+          .select('funnel_id')
+          .eq('user_id', userId)
+          .eq('form_id', formId)
+          .single();
+
+        const { data: logEntries } = await window.SupabaseClient
+          .from('typeform_events_log')
+          .select('lead_id')
+          .eq('user_id', userId)
+          .eq('form_id', formId);
+
+        const formLeadIds = [...new Set((logEntries || []).map(e => e.lead_id).filter(Boolean))];
+
+        // Step 2: Delete typeform_events_log for this form
         await window.SupabaseClient
           .from('typeform_events_log')
           .delete()
           .eq('user_id', userId)
           .eq('form_id', formId);
 
-        // Step 2: Get lead IDs for this form
-        const { data: leads } = await window.SupabaseClient
-          .from('leads')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('lead_source', 'typeform');
-
-        if (leads && leads.length > 0) {
-          const leadIds = leads.map(l => l.id);
-          
-          // Delete events
-          await window.SupabaseClient
+        if (formLeadIds.length > 0) {
+          // Step 3: Delete events for this form's funnel only
+          const eventsQuery = window.SupabaseClient
             .from('events')
             .delete()
-            .in('lead_id', leadIds);
+            .in('lead_id', formLeadIds);
+          if (formMapping?.funnel_id) {
+            await eventsQuery.eq('funnel_id', formMapping.funnel_id);
+          } else {
+            await eventsQuery;
+          }
 
-          // Delete leads
-          await window.SupabaseClient
-            .from('leads')
-            .delete()
-            .in('id', leadIds);
+          // Step 4: Only delete leads that have no remaining events
+          const { data: remainingEvents } = await window.SupabaseClient
+            .from('events')
+            .select('lead_id')
+            .in('lead_id', formLeadIds);
+
+          const leadsWithEvents = new Set((remainingEvents || []).map(e => e.lead_id));
+          const leadsToDelete = formLeadIds.filter(id => !leadsWithEvents.has(id));
+
+          if (leadsToDelete.length > 0) {
+            await window.SupabaseClient
+              .from('leads')
+              .delete()
+              .in('id', leadsToDelete);
+          }
         }
 
-        // Step 3: Deactivate form
+        // Step 6: Deactivate form
         const { error } = await window.SupabaseClient
           .from('typeform_forms')
           .update({ is_active: false })

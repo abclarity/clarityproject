@@ -159,6 +159,9 @@
             <button id="csvImportBtn" class="datapool-btn">
               📤 CSV Import
             </button>
+            <button id="unitImportBtn" class="datapool-btn datapool-btn--unit">
+              💰 Unit erfassen
+            </button>
             <button id="integrationsBtn" class="datapool-btn">
               🔌 Integrationen
             </button>
@@ -481,6 +484,13 @@
       if (csvImportBtn) {
         csvImportBtn.addEventListener('click', () => {
           this.openCSVImport();
+        });
+      }
+
+      const unitImportBtn = document.getElementById('unitImportBtn');
+      if (unitImportBtn) {
+        unitImportBtn.addEventListener('click', () => {
+          this.openUnitImportModal();
         });
       }
 
@@ -1641,11 +1651,19 @@
         ? `<span class="spam-badge" title="Als Spam erkannt – wird nicht im Tracking Sheet gezählt">🚫 Spam</span>`
         : '';
 
+      // Units ohne zugeordnete Source hervorheben
+      const isUnattributed = isUnitsTab && !item.source;
+      if (isUnattributed) tr.classList.add('unit-unattributed');
+
+      const unattributedBadge = isUnattributed
+        ? `<span class="unattributed-badge" title="Kein Lead/Funnel gefunden – bitte manuell zuordnen">Nicht zugeordnet</span>`
+        : '';
+
       tr.innerHTML = `
         <td class="checkbox-col">
           <input type="checkbox" class="lead-checkbox" data-lead-id="${item.lead_id}" ${isChecked ? 'checked' : ''} />
         </td>
-        <td>${spamBadge}${item.lead_name || '-'}</td>
+        <td>${spamBadge}${unattributedBadge}${item.lead_name || '-'}</td>
         <td>${item.lead_email || '-'}</td>
         <td>${item.lead_phone || '-'}</td>
         <td>${eventDate}</td>
@@ -1656,6 +1674,7 @@
         <td class="events-cell">${eventsIcons}</td>
         <td class="actions-cell">
           <button class="btn-icon view-btn" data-lead-id="${item.lead_id}" title="Lead ansehen">👁️</button>
+          <button class="btn-icon spam-toggle-btn ${item.is_spam ? 'is-spam' : ''}" data-lead-id="${item.lead_id}" data-is-spam="${item.is_spam ? '1' : '0'}" title="${item.is_spam ? 'Spam-Markierung entfernen' : 'Als Spam markieren'}">🚫</button>
           <button class="btn-icon delete-btn" data-event-id="${item.event_id}" title="Event löschen">🗑️</button>
         </td>
       `;
@@ -1693,6 +1712,16 @@
         deleteBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           this.deleteEvent(item.event_id);
+        });
+      }
+
+      const spamToggleBtn = tr.querySelector('.spam-toggle-btn');
+      if (spamToggleBtn) {
+        spamToggleBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const leadId = spamToggleBtn.dataset.leadId;
+          const currentIsSpam = spamToggleBtn.dataset.isSpam === '1';
+          this.toggleSpam(leadId, currentIsSpam);
         });
       }
 
@@ -1888,6 +1917,44 @@
         if (window.Toast) {
           window.Toast.error('Fehler beim Löschen des Events');
         }
+      }
+    },
+
+    async toggleSpam(leadId, currentIsSpam) {
+      const newIsSpam = !currentIsSpam;
+      try {
+        const { error: leadError } = await window.SupabaseClient
+          .from('leads')
+          .update({
+            is_spam: newIsSpam,
+            lead_status: newIsSpam ? 'spam' : 'new',
+          })
+          .eq('id', leadId);
+
+        if (leadError) {
+          console.error('❌ Error toggling spam on lead:', leadError);
+          if (window.Toast) window.Toast.error('Fehler beim Aktualisieren');
+          return;
+        }
+
+        const { error: eventError } = await window.SupabaseClient
+          .from('events')
+          .update({ is_spam: newIsSpam })
+          .eq('lead_id', leadId);
+
+        if (eventError) {
+          console.error('❌ Error toggling spam on events:', eventError);
+          if (window.Toast) window.Toast.error('Fehler beim Aktualisieren der Events');
+          return;
+        }
+
+        if (window.Toast) {
+          window.Toast.success(newIsSpam ? 'Als Spam markiert' : 'Spam-Markierung entfernt');
+        }
+        await this.loadTabData();
+      } catch (err) {
+        console.error('❌ Error toggling spam:', err);
+        if (window.Toast) window.Toast.error('Fehler beim Aktualisieren');
       }
     },
 
@@ -2505,6 +2572,434 @@
       }
 
       return html;
+    },
+
+    // ============================================
+    // UNIT IMPORT
+    // ============================================
+
+    openUnitImportModal() {
+      const existing = document.getElementById('unitImportModal');
+      if (existing) existing.remove();
+
+      const funnels = window.FunnelAPI?.loadFunnels() || [];
+      const funnelOptions = funnels.map(f =>
+        `<option value="${f.id}">${f.name}</option>`
+      ).join('');
+
+      const modal = document.createElement('div');
+      modal.id = 'unitImportModal';
+      modal.className = 'modal';
+      modal.innerHTML = `
+        <div class="modal-content unit-import-modal">
+          <div class="modal-header">
+            <h2>💰 Unit erfassen</h2>
+            <button class="close-btn" id="unitImportCloseBtn">×</button>
+          </div>
+
+          <div class="unit-import-tabs">
+            <button class="unit-import-tab active" data-tab="manual">Manuell</button>
+            <button class="unit-import-tab" data-tab="csv">CSV hochladen</button>
+          </div>
+
+          <!-- MANUELL TAB -->
+          <div id="unitTabManual" class="unit-import-tab-content active">
+            <div class="modal-body unit-import-form">
+              <div class="unit-form-grid">
+                <div class="form-group">
+                  <label>E-Mail <span class="required">*</span></label>
+                  <input type="email" id="unitEmail" placeholder="kunde@beispiel.de" />
+                  <small class="form-hint">Bestehender Lead wird automatisch gefunden</small>
+                </div>
+                <div class="form-group">
+                  <label>Name (optional)</label>
+                  <input type="text" id="unitName" placeholder="Max Mustermann" />
+                </div>
+                <div class="form-group">
+                  <label>Datum des Abschlusses <span class="required">*</span></label>
+                  <input type="date" id="unitDate" value="${new Date().toISOString().split('T')[0]}" />
+                </div>
+                <div class="form-group">
+                  <label>Funnel</label>
+                  <select id="unitFunnel">
+                    <option value="">— Kein Funnel —</option>
+                    ${funnelOptions}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Revenue (gesamt) <span class="required">*</span></label>
+                  <input type="number" id="unitRevenue" placeholder="5000" min="0" step="0.01" />
+                </div>
+                <div class="form-group">
+                  <label>Upfront Cash <span class="required">*</span></label>
+                  <input type="number" id="unitUfCash" placeholder="2000" min="0" step="0.01" />
+                  <small class="form-hint">Sofortiger Zahlungseingang</small>
+                </div>
+              </div>
+
+              <div class="unit-installments-section">
+                <div class="unit-installments-header">
+                  <h3>Raten (optional)</h3>
+                  <button class="datapool-btn" id="addInstallmentBtn" type="button">+ Rate hinzufügen</button>
+                </div>
+                <div class="form-hint" style="margin-bottom: 12px;">
+                  Nur ausfüllen wenn Revenue &gt; Upfront Cash. Raten werden für Projections gespeichert.
+                </div>
+                <div id="installmentsList"></div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn-secondary" id="unitManualCancelBtn">Abbrechen</button>
+              <button class="btn-primary" id="unitManualSaveBtn">Unit speichern</button>
+            </div>
+          </div>
+
+          <!-- CSV TAB -->
+          <div id="unitTabCsv" class="unit-import-tab-content" style="display:none;">
+            <div class="modal-body">
+              <div class="unit-csv-format-hint">
+                <strong>Erforderliches Format:</strong>
+                <code>email, datum, revenue, uf_cash</code>
+                <div style="margin-top: 6px; color: #7f8c8d; font-size: 12px;">
+                  Datum-Format: YYYY-MM-DD (z.B. 2026-03-18) · Dezimaltrennzeichen: Punkt
+                </div>
+              </div>
+
+              <div class="file-upload-area" id="unitCsvDropZone">
+                <div class="upload-icon">📂</div>
+                <div>CSV-Datei hier ablegen oder klicken</div>
+                <input type="file" id="unitCsvFileInput" accept=".csv" style="display:none;" />
+              </div>
+
+              <div id="unitCsvPreview" style="display:none;">
+                <div class="unit-csv-preview-table-wrap">
+                  <table class="preview-table-inner">
+                    <thead id="unitCsvPreviewHead"></thead>
+                    <tbody id="unitCsvPreviewBody"></tbody>
+                  </table>
+                </div>
+                <div id="unitCsvPreviewMeta" style="font-size:13px; color:#7f8c8d; margin-top:8px;"></div>
+              </div>
+
+              <div id="unitCsvFunnelRow" class="form-group" style="display:none; margin-top:16px;">
+                <label>Funnel für alle Zeilen</label>
+                <select id="unitCsvFunnel">
+                  <option value="">— Kein Funnel —</option>
+                  ${funnelOptions}
+                </select>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn-secondary" id="unitCsvCancelBtn">Abbrechen</button>
+              <button class="btn-primary" id="unitCsvImportBtn" disabled>Importieren</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+      this._bindUnitImportModal(modal);
+    },
+
+    _bindUnitImportModal(modal) {
+      let csvRows = null;
+
+      // Close
+      modal.querySelector('#unitImportCloseBtn').addEventListener('click', () => modal.remove());
+      modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+      // Tab switching
+      modal.querySelectorAll('.unit-import-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          modal.querySelectorAll('.unit-import-tab').forEach(t => t.classList.remove('active'));
+          modal.querySelectorAll('.unit-import-tab-content').forEach(c => c.style.display = 'none');
+          tab.classList.add('active');
+          const target = modal.querySelector(`#unitTab${tab.dataset.tab.charAt(0).toUpperCase() + tab.dataset.tab.slice(1)}`);
+          if (target) target.style.display = 'block';
+        });
+      });
+
+      // Cancel buttons
+      modal.querySelector('#unitManualCancelBtn').addEventListener('click', () => modal.remove());
+      modal.querySelector('#unitCsvCancelBtn').addEventListener('click', () => modal.remove());
+
+      // Add installment row
+      modal.querySelector('#addInstallmentBtn').addEventListener('click', () => {
+        this._addInstallmentRow(modal);
+      });
+
+      // Save manual
+      modal.querySelector('#unitManualSaveBtn').addEventListener('click', () => {
+        this._saveUnitManual(modal);
+      });
+
+      // CSV drop zone
+      const dropZone = modal.querySelector('#unitCsvDropZone');
+      const fileInput = modal.querySelector('#unitCsvFileInput');
+
+      dropZone.addEventListener('click', () => fileInput.click());
+      dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+      dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file) this._handleUnitCsvFile(modal, file, rows => { csvRows = rows; });
+      });
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files[0]) this._handleUnitCsvFile(modal, fileInput.files[0], rows => { csvRows = rows; });
+      });
+
+      // CSV Import button
+      modal.querySelector('#unitCsvImportBtn').addEventListener('click', () => {
+        if (csvRows) this._importUnitCsvRows(modal, csvRows);
+      });
+    },
+
+    _addInstallmentRow(modal) {
+      const list = modal.querySelector('#installmentsList');
+      const idx = list.children.length + 1;
+      const row = document.createElement('div');
+      row.className = 'installment-row';
+      row.innerHTML = `
+        <span class="installment-label">Rate ${idx}</span>
+        <input type="date" class="installment-date" placeholder="Datum" />
+        <input type="number" class="installment-amount" placeholder="Betrag" min="0" step="0.01" />
+        <button class="btn-icon remove-installment-btn" type="button" title="Entfernen">✕</button>
+      `;
+      row.querySelector('.remove-installment-btn').addEventListener('click', () => {
+        row.remove();
+        // Re-label remaining rows
+        modal.querySelectorAll('.installment-row').forEach((r, i) => {
+          r.querySelector('.installment-label').textContent = `Rate ${i + 1}`;
+        });
+      });
+      list.appendChild(row);
+    },
+
+    async _saveUnitManual(modal) {
+      const email = modal.querySelector('#unitEmail').value.trim().toLowerCase();
+      const name = modal.querySelector('#unitName').value.trim();
+      const date = modal.querySelector('#unitDate').value;
+      const funnelId = modal.querySelector('#unitFunnel').value || null;
+      const revenue = parseFloat(modal.querySelector('#unitRevenue').value) || 0;
+      const ufCash = parseFloat(modal.querySelector('#unitUfCash').value) || 0;
+
+      if (!email || !date || !revenue) {
+        window.Toast?.error('E-Mail, Datum und Revenue sind Pflichtfelder');
+        return;
+      }
+
+      const saveBtn = modal.querySelector('#unitManualSaveBtn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Speichern...';
+
+      try {
+        const result = await this._saveUnitEntry({ email, name, date, funnelId, revenue, ufCash, installments: this._readInstallments(modal) });
+        if (result.success) {
+          window.Toast?.success(result.message);
+          modal.remove();
+          if (this.currentTab === 'unit') await this.loadTabData();
+        } else {
+          window.Toast?.error(result.error);
+        }
+      } catch (err) {
+        console.error('❌ Unit save error:', err);
+        window.Toast?.error('Fehler beim Speichern');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Unit speichern';
+      }
+    },
+
+    _readInstallments(modal) {
+      const rows = modal.querySelectorAll('.installment-row');
+      const installments = [];
+      rows.forEach((row, i) => {
+        const dueDate = row.querySelector('.installment-date').value;
+        const amount = parseFloat(row.querySelector('.installment-amount').value) || 0;
+        if (dueDate && amount > 0) {
+          installments.push({ installment_number: i + 1, due_date: dueDate, amount });
+        }
+      });
+      return installments;
+    },
+
+    async _saveUnitEntry({ email, name, date, funnelId, revenue, ufCash, installments }) {
+      const userId = window.AuthAPI?.getUserId();
+      if (!userId) return { success: false, error: 'Nicht eingeloggt' };
+
+      // 1. Lead suchen
+      const { data: existingLead } = await window.SupabaseClient
+        .from('leads')
+        .select('id, name, funnel_id, source')
+        .eq('user_id', userId)
+        .eq('primary_email', email)
+        .maybeSingle();
+
+      let leadId;
+      let isNewLead = false;
+
+      if (existingLead) {
+        leadId = existingLead.id;
+      } else {
+        // Neuer Lead – nicht zugeordnet
+        isNewLead = true;
+        const { data: newLead, error: leadError } = await window.SupabaseClient
+          .from('leads')
+          .insert([{
+            user_id: userId,
+            primary_email: email,
+            emails: [email],
+            name: name || null,
+            source: null,
+            lead_source: 'unit-import',
+            funnel_id: funnelId,
+            metadata: {}
+          }])
+          .select('id')
+          .single();
+
+        if (leadError) {
+          console.error('❌ Lead create error:', leadError);
+          return { success: false, error: `Lead konnte nicht erstellt werden: ${leadError.message}` };
+        }
+        leadId = newLead.id;
+      }
+
+      // 2. Unit Event anlegen
+      const { data: unitEvent, error: eventError } = await window.SupabaseClient
+        .from('events')
+        .insert([{
+          user_id: userId,
+          lead_id: leadId,
+          event_type: 'unit',
+          event_date: date,
+          funnel_id: funnelId || (existingLead?.funnel_id) || null,
+          source: existingLead?.source || null,
+          event_source: existingLead?.source || null,
+          revenue,
+          cash: ufCash,
+          metadata: {}
+        }])
+        .select('id')
+        .single();
+
+      if (eventError) {
+        console.error('❌ Event create error:', eventError);
+        return { success: false, error: `Event konnte nicht erstellt werden: ${eventError.message}` };
+      }
+
+      // 3. Raten speichern
+      if (installments.length > 0) {
+        const ratenRows = installments.map(inst => ({
+          user_id: userId,
+          unit_event_id: unitEvent.id,
+          lead_id: leadId,
+          installment_number: inst.installment_number,
+          due_date: inst.due_date,
+          amount: inst.amount
+        }));
+
+        const { error: rateError } = await window.SupabaseClient
+          .from('payment_schedule')
+          .insert(ratenRows);
+
+        if (rateError) {
+          console.error('❌ Payment schedule error:', rateError);
+          // Non-fatal: Unit wurde schon gespeichert
+        }
+      }
+
+      const msg = isNewLead
+        ? `Unit gespeichert. Neuer Lead angelegt (nicht zugeordnet) – bitte Funnel manuell prüfen.`
+        : `Unit bei bestehendem Lead "${existingLead.name || email}" gespeichert.`;
+
+      return { success: true, message: msg };
+    },
+
+    _handleUnitCsvFile(modal, file, onParsed) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const text = e.target.result;
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+        if (lines.length < 2) {
+          window.Toast?.error('CSV hat keine Datenzeilen');
+          return;
+        }
+
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        const required = ['email', 'datum', 'revenue', 'uf_cash'];
+        const missing = required.filter(r => !headers.includes(r));
+        if (missing.length > 0) {
+          window.Toast?.error(`Fehlende Spalten: ${missing.join(', ')}`);
+          return;
+        }
+
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cells = lines[i].split(',').map(c => c.trim());
+          const row = {};
+          headers.forEach((h, idx) => { row[h] = cells[idx] || ''; });
+          if (row.email && row.datum) rows.push(row);
+        }
+
+        if (rows.length === 0) {
+          window.Toast?.error('Keine gültigen Zeilen gefunden');
+          return;
+        }
+
+        // Preview
+        const previewArea = modal.querySelector('#unitCsvPreview');
+        const thead = modal.querySelector('#unitCsvPreviewHead');
+        const tbody = modal.querySelector('#unitCsvPreviewBody');
+        const meta = modal.querySelector('#unitCsvPreviewMeta');
+        const funnelRow = modal.querySelector('#unitCsvFunnelRow');
+
+        thead.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
+        tbody.innerHTML = rows.slice(0, 5).map(row =>
+          `<tr>${headers.map(h => `<td>${row[h] || '-'}</td>`).join('')}</tr>`
+        ).join('');
+
+        meta.textContent = `${rows.length} Zeile(n) gefunden${rows.length > 5 ? ' (Vorschau: erste 5)' : ''}`;
+        previewArea.style.display = 'block';
+        funnelRow.style.display = 'block';
+        modal.querySelector('#unitCsvImportBtn').disabled = false;
+
+        onParsed(rows);
+      };
+      reader.readAsText(file);
+    },
+
+    async _importUnitCsvRows(modal, rows) {
+      const funnelId = modal.querySelector('#unitCsvFunnel').value || null;
+      const importBtn = modal.querySelector('#unitCsvImportBtn');
+      importBtn.disabled = true;
+      importBtn.textContent = 'Importiere...';
+
+      let success = 0, errors = 0;
+
+      for (const row of rows) {
+        const entry = {
+          email: (row.email || '').toLowerCase().trim(),
+          name: row.name || '',
+          date: row.datum,
+          funnelId,
+          revenue: parseFloat(row.revenue) || 0,
+          ufCash: parseFloat(row.uf_cash) || 0,
+          installments: []
+        };
+        if (!entry.email || !entry.date) { errors++; continue; }
+        const result = await this._saveUnitEntry(entry);
+        if (result.success) { success++; } else { errors++; }
+      }
+
+      importBtn.textContent = 'Importieren';
+      importBtn.disabled = false;
+
+      window.Toast?.success(`${success} Unit(s) importiert${errors ? `, ${errors} Fehler` : ''}`);
+      modal.remove();
+      if (this.currentTab === 'unit') await this.loadTabData();
     },
 
     openCSVImport() {

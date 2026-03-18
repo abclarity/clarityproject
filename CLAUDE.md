@@ -295,6 +295,44 @@ unit           → Verkauf abgeschlossen (hat revenue + cash Felder)
 
 ---
 
+## Error-Handling-Regeln
+
+### 1. User-sichtbare Fehler → Toast
+Wenn eine Aktion fehlschlägt, die der User ausgelöst hat (Speichern, Laden, Sync):
+```javascript
+try {
+  await DataPool.saveEvent(event);
+} catch (err) {
+  console.error('❌ Event speichern fehlgeschlagen:', err);
+  Toast.error('Event konnte nicht gespeichert werden.');
+}
+```
+
+### 2. Hintergrund-Fehler → nur Console
+Wenn etwas im Hintergrund fehlschlägt (z.B. Auto-Sync, Prefetch):
+```javascript
+try {
+  await syncTrafficMetrics();
+} catch (err) {
+  console.error('❌ Traffic-Sync fehlgeschlagen:', err);
+  // Kein Toast – User hat nichts aktiv ausgelöst
+}
+```
+
+### 3. Grundregeln
+- Jeder API-Call und jede async Operation braucht try/catch
+- Fehler niemals still verschlucken (leerer catch-Block verboten)
+- Console-Logs immer mit ❌ Prefix für schnelles Filtern
+- Toast-Messages auf Deutsch, kurz und verständlich
+- Bei Unsicherheit ob Toast oder nur Console: Toast nutzen
+
+### 4. Rückgabewerte bei Fehlern
+- Funktionen die Daten laden: `null` oder leeres Array `[]` zurückgeben
+- Funktionen die speichern: `false` zurückgeben
+- Niemals `undefined` implizit durchfallen lassen
+
+---
+
 ## Konventionen
 
 ### Benennung

@@ -96,19 +96,27 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Check if response already processed (idempotency) - NEW SCHEMA
-    const { data: existingLog } = await supabase
+    // Claim this response_id atomically – insert a placeholder log entry first.
+    // If another concurrent request already inserted it (race condition / Typeform retry),
+    // the UNIQUE constraint on response_id causes this insert to return 0 rows → we exit early.
+    // This prevents duplicate leads/events when Typeform retries a slow webhook.
+    const { data: logClaim, error: logClaimError } = await supabase
       .from('typeform_events_log')
+      .insert({ form_id: formId, response_id: responseId, raw_payload: payload })
       .select('id')
-      .eq('response_id', responseId)
-      .maybeSingle();
+      .single();
 
-    if (existingLog) {
-      console.log('Response already processed:', responseId);
-      return new Response(JSON.stringify({ message: 'Already processed' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (logClaimError) {
+      // Unique-constraint violation (code 23505) = already processing or processed
+      if (logClaimError.code === '23505') {
+        console.log('Response already claimed/processed (duplicate webhook call):', responseId);
+        return new Response(JSON.stringify({ message: 'Already processed' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      throw logClaimError;
     }
+    const logEntryId = logClaim.id;
 
     // Get form mapping (which funnel does this form fill?) - NEW SCHEMA
     const { data: mapping, error: mappingError } = await supabase
@@ -124,28 +132,28 @@ serve(async (req) => {
     }
     if (!mapping) {
       console.log('No mapping found for form:', formId);
-      // Log webhook but don't process (form not connected to any funnel) - NEW SCHEMA
-      await supabase.from('typeform_events_log').insert({
-        form_id: formId,
-        response_id: responseId,
-        raw_payload: payload,
-      });
+      // Placeholder log entry was already inserted above – nothing more to do
       return new Response(JSON.stringify({ message: 'Form not mapped to any funnel' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     // Extract lead data from answers
-    const leadData = extractLeadData(form_response.answers);
+    const leadData = extractLeadData(form_response.answers, form_response.definition?.fields);
 
-    // Extract survey answers, filtered to selected_questions if configured
-    const allSurveyAnswers = extractSurveyAnswers(form_response.answers);
+    // Extract all survey answers (same logic as typeform-sync: answer[answer.type])
+    const allSurveyAnswers = extractAllAnswers(form_response.answers, form_response.definition.fields || []);
+    console.log(`📋 All extracted answers (${Object.keys(allSurveyAnswers).length}):`, JSON.stringify(allSurveyAnswers));
+
+    // Filter to selected_questions if configured
     const surveyAnswers = filterBySelectedQuestions(
       allSurveyAnswers,
       form_response.answers,
       mapping.selected_questions || null,
       mapping.fields || []
     );
+    console.log(`✅ Survey answers after filter (${Object.keys(surveyAnswers).length}):`, JSON.stringify(surveyAnswers));
+    console.log(`📌 selected_questions in mapping:`, JSON.stringify(mapping.selected_questions));
 
     if (!leadData.email) {
       throw new Error('No email found in form submission');
@@ -220,13 +228,13 @@ serve(async (req) => {
           lead_status: spam.isSpam ? 'spam' : 'new',
           is_spam: spam.isSpam,
           utm_campaign: form_response.hidden?.utm_campaign || null,
-          utm_source: form_response.hidden?.utm_source || null,
-          utm_medium: form_response.hidden?.utm_medium || null,
           metadata: {
             typeform_form_id: formId,
             typeform_response_id: responseId,
             typeform_submitted_at: form_response.submitted_at,
             typeform_answers: surveyAnswers,
+            utm_source: form_response.hidden?.utm_source || null,
+            utm_medium: form_response.hidden?.utm_medium || null,
             ...(spam.isSpam ? { spam_reasons: spam.reasons, spam_score: spam.score } : {}),
           },
           created_at: form_response.submitted_at,
@@ -281,17 +289,14 @@ serve(async (req) => {
       throw eventError;
     }
 
-    // Log webhook processing - NEW SCHEMA
-    await supabase.from('typeform_events_log').insert({
+    // Update the placeholder log entry (inserted at the top as idempotency lock) with full data
+    await supabase.from('typeform_events_log').update({
       user_id: mapping.user_id,
-      form_id: formId,
-      response_id: responseId,
       lead_id: leadId,
       event_id: event.id,
       event_type: eventType,
       is_qualified: isQualified,
-      raw_payload: payload,
-    });
+    }).eq('id', logEntryId);
 
     console.log('Successfully processed Typeform webhook');
     console.log('Lead ID:', leadId);
@@ -354,67 +359,97 @@ async function verifySignature(signature: string, body: string, secret: string):
 }
 
 // Helper: Extract lead data (email, name, phone) from Typeform answers
-function extractLeadData(answers: TypeformAnswer[]): { email?: string; name?: string; phone?: string } {
+function extractLeadData(answers: TypeformAnswer[], fields?: { id: string; title: string; type: string }[]): { email?: string; name?: string; phone?: string } {
   const data: { email?: string; name?: string; phone?: string } = {};
+
+  // Build a title lookup from the definition fields (more reliable than answer.field.ref)
+  const titleById: Record<string, string> = {};
+  if (fields) {
+    for (const f of fields) titleById[f.id] = f.title?.toLowerCase() || '';
+  }
+
+  let firstName: string | undefined;
+  let lastName: string | undefined;
 
   for (const answer of answers) {
     // Email
     if (answer.type === 'email' && answer.email) {
       data.email = answer.email;
+      continue;
     }
     // Phone
     if (answer.type === 'phone_number' && answer.phone_number) {
       data.phone = answer.phone_number;
+      continue;
     }
-    // Name (various field types)
-    if (!data.name) {
-      if (answer.field.type === 'short_text' && answer.text) {
-        // Heuristic: if field title contains "name", use it
-        const fieldTitle = answer.field.ref?.toLowerCase() || '';
-        if (fieldTitle.includes('name') || fieldTitle.includes('namen')) {
-          data.name = answer.text;
-        }
+    // Name fields (short_text only)
+    if (answer.field.type === 'short_text' && answer.text) {
+      const title = titleById[answer.field.id] || answer.field.ref?.toLowerCase() || '';
+      const isLastName = title.includes('nachname') || title.includes('last name') || title.includes('lastname') || title.includes('surname');
+      const isFirstName = title.includes('vorname') || title.includes('first name') || title.includes('firstname');
+      const isAnyName = title.includes('name');
+
+      if (isLastName) {
+        lastName = answer.text;
+      } else if (isFirstName) {
+        firstName = answer.text;
+      } else if (isAnyName && !firstName && !lastName) {
+        // Generic "name" field – use as full name fallback
+        data.name = answer.text;
       }
     }
   }
 
+  // Combine first + last name if both found
+  if (firstName && lastName) {
+    data.name = `${firstName} ${lastName}`;
+  } else if (firstName) {
+    data.name = firstName;
+  } else if (lastName) {
+    data.name = lastName;
+  }
+  // else: data.name stays as generic fallback set above
+
   return data;
 }
 
-// Helper: Extract survey answers (exclude email/phone, extract labels from choices)
-function extractSurveyAnswers(answers: TypeformAnswer[]): Record<string, string> {
-  const surveyAnswers: Record<string, string> = {};
+// Helper: Extract all answers by field ID (same approach as typeform-sync)
+// Uses answer[answer.type] to cover every Typeform answer type automatically.
+// Skips email and phone_number (system fields, not survey questions).
+// Returns { fieldId: value } with question titles as keys where available.
+function extractAllAnswers(
+  answers: TypeformAnswer[],
+  definitionFields: Array<{ id: string; title: string; type: string }>
+): Record<string, string> {
+  const result: Record<string, string> = {};
 
   for (const answer of answers) {
     // Skip system fields
-    if (answer.type === 'email' || answer.type === 'phone_number') {
-      continue;
-    }
+    if (answer.type === 'email' || answer.type === 'phone_number') continue;
 
-    const questionTitle = answer.field.title || answer.field.id;
-    let answerValue: string | null = null;
+    const fieldId = answer.field.id;
+    // Get field title from definition (webhook answers don't include title directly)
+    const defField = definitionFields.find(f => f.id === fieldId);
+    const fieldTitle = defField?.title || fieldId;
 
-    // Extract answer value based on type
-    if (answer.type === 'text' && answer.text) {
-      answerValue = answer.text;
-    } else if (answer.type === 'choice' && answer.choice) {
-      // Extract label from choice object
-      answerValue = answer.choice.label;
-    } else if (answer.type === 'boolean' && answer.boolean !== undefined) {
-      answerValue = answer.boolean ? 'Ja' : 'Nein';
-    } else if (answer.type === 'number' && answer.number !== undefined) {
-      answerValue = String(answer.number);
-    } else if (answer.type === 'date' && answer.date) {
-      answerValue = answer.date;
-    }
+    // Universal extraction: answer[answer.type] covers text, choice, choices, boolean, number, date, url, etc.
+    let value: any = (answer as any)[answer.type];
 
-    // Add to survey answers if we extracted a value
-    if (answerValue) {
-      surveyAnswers[questionTitle] = answerValue;
+    // Choices object → extract label
+    if (value && typeof value === 'object' && value.label) value = value.label;
+    // Multiple choices array → join labels
+    if (value && typeof value === 'object' && Array.isArray(value.labels)) value = value.labels.join(', ');
+    // Boolean → human-readable
+    if (typeof value === 'boolean') value = value ? 'Ja' : 'Nein';
+    // Number → string
+    if (typeof value === 'number') value = String(value);
+
+    if (value !== undefined && value !== null && value !== '') {
+      result[fieldTitle] = String(value);
     }
   }
 
-  return surveyAnswers;
+  return result;
 }
 
 // Helper: Check if lead is qualified based on specific answer
@@ -423,9 +458,9 @@ function checkQualification(
   qualificationQuestionId: string | null,
   qualifyingAnswers: string[] | null
 ): boolean {
-  // If no qualification logic configured, default to qualified
+  // If no qualification logic configured, treat as regular survey (not qualified)
   if (!qualificationQuestionId || !qualifyingAnswers || qualifyingAnswers.length === 0) {
-    return true;
+    return false;
   }
 
   // Find the qualification question answer
@@ -482,8 +517,10 @@ function detectSpam(
   const domain = emailLower.split('@')[1] || '';
   const answers = Object.values(surveyAnswers).join(' ').toLowerCase();
   const digits = (phone || '').replace(/\D/g, '');
-  const VOWELS = /[aeiouäöüàáâãèéêëìíîïòóôõùúûýæœ]/i;
-  const CONS4 = /[bcdfghjklmnpqrstvwxyz]{4,}/i;
+  // Fix 1: 'y' added as vowel (Slavic names like Volodymyr use y as vowel)
+  const VOWELS = /[aeiouyäöüàáâãèéêëìíîïòóôõùúûýæœ]/i;
+  // Fix 2: threshold raised from 5 to 7 (German surnames like Redschlag have natural 5-6 consonant clusters)
+  const CONS4 = /[bcdfghjklmnpqrstvwxyz]{7,}/i;
 
   // ── Hard rules (+3 each → instant spam at threshold 3) ─────────────────────
   if (/\btest\b/.test(n)) { score += 3; reasons.push('name contains "test"'); }
@@ -494,9 +531,11 @@ function detectSpam(
 
   const TEST_DOMAINS = ['test.com','test.de','test.org','test.net','example.com','example.de','example.org'];
   if (TEST_DOMAINS.includes(domain)) { score += 3; reasons.push(`test domain "${domain}"`); }
+  // Fix 3: trusted providers – real last names in email shouldn't score points
+  const TRUSTED_EMAIL_DOMAINS = ['gmail.com','googlemail.com','gmx.de','gmx.net','gmx.at','gmx.ch','web.de','outlook.com','outlook.de','hotmail.com','hotmail.de','icloud.com','yahoo.com','yahoo.de','t-online.de','protonmail.com','proton.me'];
 
-  if (/\b(scam|abzocken|spam)\b/.test(answers)) { score += 3; reasons.push('spam keyword in answers'); }
-  if (/\b(fake|fuck|shit|scam|spam|hurensohn|arschloch)\b/.test(n)) { score += 3; reasons.push('profanity/spam in name'); }
+  if (/(scam|abzocken|spam|penis|pussy|fick|wichser|nutte|porno|dildo|vagina|schwanz|titten)/i.test(answers)) { score += 3; reasons.push('spam keyword in answers'); }
+  if (/(fake|fuck|shit|scam|spam|hurensohn|arschloch|penis|pussy|fick|wichser|nutte|porno|dildo|vagina|schwanz|titten)/i.test(n)) { score += 3; reasons.push('profanity/spam in name'); }
   if (/\b(blabla|blablabla|xyz)\b/.test(n)) { score += 3; reasons.push('obvious fake name pattern'); }
 
   // Phone clearly too short (real DE numbers ≥ 10 digits total incl. country code)
@@ -522,7 +561,7 @@ function detectSpam(
   // All name parts are single letters ("G G", "H H")
   const nameParts = n.split(/\s+/).filter(p => p.length > 0);
   if (nameParts.length >= 2 && nameParts.every(p => p.length === 1)) {
-    score += 2; reasons.push('name is only single letters');
+    score += 3; reasons.push('name is only single letters');
   }
 
   // Phone: all same digit (111111, 999999)
@@ -531,8 +570,8 @@ function detectSpam(
   // Single-char name (any letter — "A", "J", "H") is suspicious as a full name
   if (n.length === 1) { score += 3; reasons.push('single letter as name'); }
 
-  // Keyboard mash in email local part (3+ consecutive consonants catches "yikdj", "bbz", etc.)
-  if (/[bcdfghjklmnpqrstvwxyz]{3,}/i.test(local)) { score += 1; reasons.push('keyboard mash in email'); }
+  // Keyboard mash in email local part (3+ consecutive consonants) – skipped for trusted providers
+  if (/[bcdfghjklmnpqrstvwxyz]{3,}/i.test(local) && !TRUSTED_EMAIL_DOMAINS.includes(domain)) { score += 1; reasons.push('keyboard mash in email'); }
 
   // Keyboard mash in survey answers (4+ consecutive consonants)
   if (CONS4.test(answers)) { score += 1; reasons.push('keyboard mash in answers'); }
@@ -548,7 +587,7 @@ function detectSpam(
 
 // Helper: Filter survey answers to only the questions selected during import
 // selected_questions format: { "field_id": "Short Label" }
-// Falls back to all answers if no selection configured
+// Falls back to allAnswers if no selection configured OR if filter yields nothing.
 function filterBySelectedQuestions(
   allAnswers: Record<string, string>,
   rawAnswers: TypeformAnswer[],
@@ -561,25 +600,36 @@ function filterBySelectedQuestions(
 
   const filtered: Record<string, string> = {};
   for (const [fieldId, label] of Object.entries(selectedQuestions)) {
-    // Find value from raw answers by field id
+    // Find raw answer by field id
     const raw = rawAnswers.find(a => a.field.id === fieldId);
-    if (!raw) continue;
+    if (!raw) {
+      console.log(`⚠️ No raw answer found for selected field: ${fieldId} ("${label}")`);
+      continue;
+    }
 
-    let value: string | undefined;
-    if (raw.type === 'text' && raw.text) value = raw.text;
-    else if (raw.type === 'email' && raw.email) value = raw.email;
-    else if (raw.type === 'phone_number' && raw.phone_number) value = raw.phone_number;
-    else if (raw.type === 'choice' && raw.choice) value = raw.choice.label;
-    else if (raw.type === 'choices' && raw.choices) value = raw.choices.labels.join(', ');
-    else if (raw.type === 'boolean' && raw.boolean !== undefined) value = raw.boolean ? 'Ja' : 'Nein';
-    else if (raw.type === 'number' && raw.number !== undefined) value = String(raw.number);
+    // Universal extraction (same as extractAllAnswers)
+    let value: any = (raw as any)[raw.type];
+    if (value && typeof value === 'object' && value.label) value = value.label;
+    if (value && typeof value === 'object' && Array.isArray(value.labels)) value = value.labels.join(', ');
+    if (typeof value === 'boolean') value = value ? 'Ja' : 'Nein';
+    if (typeof value === 'number') value = String(value);
 
-    if (value !== undefined) {
-      // Use custom label if it's different from the field_id, else use field title
+    if (value !== undefined && value !== null && value !== '') {
+      // Use custom label if it's different from the field_id, else use field title from definition
       const field = formFields.find(f => f.id === fieldId);
       const questionLabel = (label && label !== fieldId) ? label : (field?.title || fieldId);
-      filtered[questionLabel] = value;
+      filtered[questionLabel] = String(value);
+    } else {
+      console.log(`⚠️ Could not extract value for field ${fieldId} (type: ${raw.type})`);
     }
   }
+
+  // Fallback: if filtering produced nothing but we have answers, return all answers
+  // This ensures the Survey tab always shows even if field IDs changed since last import
+  if (Object.keys(filtered).length === 0 && Object.keys(allAnswers).length > 0) {
+    console.log(`⚠️ Filter produced 0 results, falling back to all answers (${Object.keys(allAnswers).length} entries)`);
+    return allAnswers;
+  }
+
   return filtered;
 }

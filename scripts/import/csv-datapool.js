@@ -80,16 +80,20 @@
       const domain = emailLower.split('@')[1] || '';
       const answers = Object.values(surveyAnswers || {}).join(' ').toLowerCase();
       const digits = (phone || '').replace(/\D/g, '');
-      const VOWELS = /[aeiouäöüàáâãèéêëìíîïòóôõùúûýæœ]/i;
-      const CONS4 = /[bcdfghjklmnpqrstvwxyz]{4,}/i;
+      // Fix 1: 'y' added as vowel (Slavic names like Volodymyr use y as vowel)
+      const VOWELS = /[aeiouyäöüàáâãèéêëìíîïòóôõùúûýæœ]/i;
+      // Fix 2: threshold raised from 5 to 7 (German surnames like Redschlag have natural 5-6 consonant clusters)
+      const CONS4 = /[bcdfghjklmnpqrstvwxyz]{7,}/i;
 
       // Hard rules (+3 → instant spam)
       if (/\btest\b/.test(n)) { score += 3; reasons.push('name contains "test"'); }
       if (['test','fake','spam','xyz','asdf'].includes(local)) { score += 3; reasons.push(`email local is "${local}"`); }
       const TEST_DOMAINS = ['test.com','test.de','test.org','test.net','example.com','example.de','example.org'];
       if (TEST_DOMAINS.includes(domain)) { score += 3; reasons.push(`test domain "${domain}"`); }
-      if (/\b(scam|abzocken|spam)\b/.test(answers)) { score += 3; reasons.push('spam keyword in answers'); }
-      if (/\b(fake|fuck|shit|scam|spam|hurensohn|arschloch)\b/.test(n)) { score += 3; reasons.push('profanity/spam in name'); }
+      // Fix 3: trusted providers – real last names in email shouldn't score points
+      const TRUSTED_EMAIL_DOMAINS = ['gmail.com','googlemail.com','gmx.de','gmx.net','gmx.at','gmx.ch','web.de','outlook.com','outlook.de','hotmail.com','hotmail.de','icloud.com','yahoo.com','yahoo.de','t-online.de','protonmail.com','proton.me'];
+      if (/(scam|abzocken|spam|penis|pussy|fick|wichser|nutte|porno|dildo|vagina|schwanz|titten)/i.test(answers)) { score += 3; reasons.push('spam keyword in answers'); }
+      if (/(fake|fuck|shit|scam|spam|hurensohn|arschloch|penis|pussy|fick|wichser|nutte|porno|dildo|vagina|schwanz|titten)/i.test(n)) { score += 3; reasons.push('profanity/spam in name'); }
       if (/\b(blabla|blablabla|xyz)\b/.test(n)) { score += 3; reasons.push('obvious fake name'); }
       if (digits.length > 0 && digits.length < 6) { score += 3; reasons.push(`phone too short (${digits.length} digits)`); }
 
@@ -106,12 +110,12 @@
       const hasAllConsonantPart = n.split(/\s+/).some(p => p.length >= 2 && !VOWELS.test(p));
       if (hasAllConsonantPart) { score += 2; reasons.push('consonant-only word in name'); }
       const nameParts = n.split(/\s+/).filter(p => p.length > 0);
-      if (nameParts.length >= 2 && nameParts.every(p => p.length === 1)) { score += 2; reasons.push('name is only single letters'); }
+      if (nameParts.length >= 2 && nameParts.every(p => p.length === 1)) { score += 3; reasons.push('name is only single letters'); }
       if (digits.length >= 5 && new Set(digits).size === 1) { score += 2; reasons.push('phone all same digit'); }
       // Single-char name (any letter — "A", "J", "H") is suspicious as a full name
       if (n.length === 1) { score += 3; reasons.push('single letter as name'); }
-      // Keyboard mash in email local part (3+ consecutive consonants)
-      if (/[bcdfghjklmnpqrstvwxyz]{3,}/i.test(local)) { score += 1; reasons.push('keyboard mash in email'); }
+      // Keyboard mash in email local part (3+ consecutive consonants) – skipped for trusted providers
+      if (/[bcdfghjklmnpqrstvwxyz]{3,}/i.test(local) && !TRUSTED_EMAIL_DOMAINS.includes(domain)) { score += 1; reasons.push('keyboard mash in email'); }
       if (CONS4.test(answers)) { score += 1; reasons.push('keyboard mash in answers'); }
       // Any individual answer that contains zero vowels (e.g. "Ff", "ds", "byjyk")
       const anyAnswerNoVowels = Object.values(surveyAnswers || {}).some(v =>
