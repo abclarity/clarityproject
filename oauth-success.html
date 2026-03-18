@@ -75,6 +75,21 @@
         if (window.opener) {
           window.opener.postMessage({ type: 'TYPEFORM_OAUTH_SUCCESS', email }, '*');
         }
+      } else if (type === 'calendly') {
+        const email = params.get('email') || '';
+        const error = params.get('error') || '';
+        document.title = error ? 'Calendly Fehler' : 'Calendly Verbunden';
+        document.querySelector('h2').textContent = error ? 'Calendly Verbindung fehlgeschlagen' : 'Calendly erfolgreich verbunden!';
+        document.querySelector('p').textContent = error || 'Deine Call Bookings werden jetzt automatisch getrackt...';
+        if (email) detailsEl.innerHTML = `<div>Konto: ${email}</div>`;
+
+        if (window.opener) {
+          if (error) {
+            window.opener.postMessage({ type: 'CALENDLY_OAUTH_ERROR', error }, '*');
+          } else {
+            window.opener.postMessage({ type: 'CALENDLY_OAUTH_SUCCESS', email }, '*');
+          }
+        }
       } else {
         // Facebook flow
         const connectionId = params.get('connection_id');
