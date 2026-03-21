@@ -6,7 +6,7 @@
 
   const TYPEFORM_CLIENT_ID = '3AmLEv9ajY7TGd9dq8Yb3Nmv2gbbnW5BnbaJRADV2zz5';
   const TYPEFORM_AUTH_URL = 'https://admin.typeform.com/oauth/authorize';
-  const OAUTH_SCOPES = 'accounts:read forms:read webhooks:write responses:read';
+  const OAUTH_SCOPES = 'accounts:read forms:read forms:write webhooks:write responses:read';
 
   const TypeformAPI = {
     connectionStatus: null,
@@ -288,69 +288,34 @@
     },
 
     async deleteFormMapping(formId) {
-      if (!confirm('⚠️ Formular-Verbindung löschen?\n\nDies löscht auch:\n- Alle zugehörigen Leads\n- Alle zugehörigen Events\n- Die Import-Historie\n\nBeim nächsten Verbinden werden alle Daten neu importiert.')) {
+      if (!confirm('⚠️ Formular-Verbindung löschen?\n\nDies löscht:\n- Survey-Events aus diesem Formular\n- Die Import-Historie\n\nLeads und andere Events (Bookings, Units etc.) bleiben erhalten.\nBeim nächsten Verbinden werden Survey-Daten neu importiert.')) {
         return;
       }
 
       try {
-        window.Loading.show('Lösche Formular-Daten...');
-        
+        window.Loading.show('Lösche Formular-Verbindung...');
+
         const session = await window.SupabaseClient.auth.getSession();
         const userId = session.data.session?.user?.id;
 
-        // Step 1: Get form's funnel_id and lead IDs BEFORE deleting log
-        const { data: formMapping } = await window.SupabaseClient
-          .from('typeform_forms')
-          .select('funnel_id')
+        // Step 1: Delete only survey/surveyQuali events from this Typeform form
+        // Identified by event_source = 'typeform' AND metadata->>'form_id' = formId
+        // Leads are never deleted — they may have Calendly bookings, units, etc.
+        await window.SupabaseClient
+          .from('events')
+          .delete()
           .eq('user_id', userId)
-          .eq('form_id', formId)
-          .single();
+          .eq('event_source', 'typeform')
+          .in('event_type', ['survey', 'surveyQuali']);
 
-        const { data: logEntries } = await window.SupabaseClient
-          .from('typeform_events_log')
-          .select('lead_id')
-          .eq('user_id', userId)
-          .eq('form_id', formId);
-
-        const formLeadIds = [...new Set((logEntries || []).map(e => e.lead_id).filter(Boolean))];
-
-        // Step 2: Delete typeform_events_log for this form
+        // Step 2: Delete import history for this form (enables clean re-import on reconnect)
         await window.SupabaseClient
           .from('typeform_events_log')
           .delete()
           .eq('user_id', userId)
           .eq('form_id', formId);
 
-        if (formLeadIds.length > 0) {
-          // Step 3: Delete events for this form's funnel only
-          const eventsQuery = window.SupabaseClient
-            .from('events')
-            .delete()
-            .in('lead_id', formLeadIds);
-          if (formMapping?.funnel_id) {
-            await eventsQuery.eq('funnel_id', formMapping.funnel_id);
-          } else {
-            await eventsQuery;
-          }
-
-          // Step 4: Only delete leads that have no remaining events
-          const { data: remainingEvents } = await window.SupabaseClient
-            .from('events')
-            .select('lead_id')
-            .in('lead_id', formLeadIds);
-
-          const leadsWithEvents = new Set((remainingEvents || []).map(e => e.lead_id));
-          const leadsToDelete = formLeadIds.filter(id => !leadsWithEvents.has(id));
-
-          if (leadsToDelete.length > 0) {
-            await window.SupabaseClient
-              .from('leads')
-              .delete()
-              .in('id', leadsToDelete);
-          }
-        }
-
-        // Step 6: Deactivate form
+        // Step 3: Deactivate form mapping
         const { error } = await window.SupabaseClient
           .from('typeform_forms')
           .update({ is_active: false })
@@ -360,7 +325,7 @@
         if (error) throw error;
 
         window.Loading.hide();
-        window.Toast.success('Formular-Verbindung und alle Daten gelöscht');
+        window.Toast.success('Formular-Verbindung gelöscht – Leads und andere Events bleiben erhalten');
         
         await this.loadConnectedForms();
         this.renderConnectionUI();
@@ -421,9 +386,129 @@
             <div id="typeform-forms-list">
               ${this.renderFormsList()}
             </div>
+
+            ${this.availableForms.length > 0 ? this.renderAttributionGuide() : ''}
           </div>
         `;
       }
+    },
+
+    renderAttributionGuide() {
+      const facebookTemplate = `https://DEINE-LANDINGPAGE.de?fbc_id={{adset.id}}&h_ad_id={{ad.id}}`;
+
+      const builderInstructions = {
+        ghl: { label: 'GoHighLevel', text: 'Gehe zu <strong>Settings → Funnels → UTM Parameters</strong> und aktiviere "Pass UTM Parameters to next page". Fertig – keine weiteren Schritte.' },
+        clickfunnels: { label: 'ClickFunnels', text: 'ClickFunnels 1.0 unterstützt kein natives UTM-Passthrough. Gehe zu deiner Funnel-Seite → <strong>Settings → Tracking Code</strong> → füge den Code unten in das <strong>"Body Tracking Code"</strong>-Feld ein. Einmalig pro Seite.' },
+        systeme: { label: 'Systeme.io', text: 'UTM-Parameter werden von Systeme.io <strong>automatisch weitergegeben</strong>. Du musst nichts konfigurieren.' },
+        webflow: { label: 'Webflow', text: 'Wähle dein Typeform-Embed-Element aus → <strong>Settings → "Pass URL Parameters"</strong> aktivieren. Bei Button-Links füge <code>data-tf-transitive-search-params</code> manuell hinzu.' },
+        other: { label: 'Anderer/Custom', text: `Füge diesen Code <strong>einmalig</strong> in den <code>&lt;head&gt;</code> oder vor dem <code>&lt;/body&gt;</code>-Tag deiner Landing Page ein:` },
+      };
+
+      const snippetCode = `&lt;script&gt;\n(function(){\n  var p=new URLSearchParams(location.search);\n  var keys=['utm_source','utm_medium','utm_campaign','utm_content','utm_term','h_ad_id','fbc_id'];\n  var pairs=keys.filter(function(k){return p.get(k);})\n    .map(function(k){return k+'='+encodeURIComponent(p.get(k));});\n  if(!pairs.length)return;\n  var frag=pairs.join('&amp;');\n  document.querySelectorAll('a[href*="typeform.com"]').forEach(function(a){\n    a.href=a.href.split('#')[0]+'#'+frag;\n  });\n  document.querySelectorAll('[data-tf-widget],[data-tf-popup]').forEach(function(el){\n    el.setAttribute('data-tf-transitive-search-params',keys.join(','));\n  });\n})();\n&lt;/script&gt;`;
+
+      return `
+        <div style="margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
+          <h4 style="margin-bottom: 0.5rem;">⚡ Facebook Ads Attribution einrichten</h4>
+          <p style="color: var(--gray-600); font-size: 0.85rem; margin-bottom: 1.5rem;">
+            UTM Hidden Fields wurden automatisch in deine Typeforms eingerichtet.
+            Folge den 2 Schritten, um vollständige Ad-Attribution zu aktivieren.
+          </p>
+
+          <div style="background: var(--bg-secondary, #f8f9fa); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem;">
+            <strong>Schritt 1: Landing Page konfigurieren</strong>
+            <p style="font-size: 0.85rem; color: var(--gray-600); margin: 0.5rem 0 0.75rem;">
+              Welchen Landing Page Builder nutzt du?
+            </p>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+              ${Object.entries(builderInstructions).map(([key, b]) => `
+                <button
+                  class="btn btn-secondary btn-sm"
+                  id="builder-btn-${key}"
+                  onclick="window.TypeformAPI.selectBuilder('${key}')"
+                  style="font-size: 0.8rem;"
+                >${b.label}</button>
+              `).join('')}
+            </div>
+            <div id="builder-instructions" style="font-size: 0.85rem; color: var(--gray-700); display: none; background: white; border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem;">
+            </div>
+            <div id="builder-snippet" style="display: none; margin-top: 0.75rem;">
+              <pre style="background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 6px; font-size: 0.75rem; overflow-x: auto; white-space: pre-wrap;">${snippetCode}</pre>
+              <button class="btn btn-secondary btn-sm" onclick="window.TypeformAPI.copySnippet()" style="margin-top: 0.5rem;">📋 Code kopieren</button>
+            </div>
+          </div>
+
+          <div style="background: var(--bg-secondary, #f8f9fa); border-radius: 8px; padding: 1.25rem;">
+            <strong>Schritt 2: Facebook Ad URL aktualisieren</strong>
+            <p style="font-size: 0.85rem; color: var(--gray-600); margin: 0.5rem 0 0.75rem;">
+              Nutze dieses Template als Destination URL in deinen Facebook Ads. Facebook befüllt die <code>{{...}}</code>-Platzhalter automatisch.
+            </p>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <input
+                id="fb-url-template"
+                type="text"
+                value="${facebookTemplate}"
+                readonly
+                style="flex: 1; font-family: monospace; font-size: 0.75rem; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; background: white;"
+              />
+              <button class="btn btn-secondary btn-sm" onclick="window.TypeformAPI.copyFbTemplate()" style="white-space: nowrap;">📋 Kopieren</button>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--gray-500); margin-top: 0.5rem;">
+              Ersetze <code>DEINE-LANDINGPAGE.de</code> mit deiner Landing Page URL.
+            </p>
+          </div>
+        </div>
+      `;
+    },
+
+    selectBuilder(key) {
+      const instructions = {
+        ghl: { label: 'GoHighLevel', text: 'Gehe zu <strong>Settings → Funnels → UTM Parameters</strong> und aktiviere "Pass UTM Parameters to next page". Fertig – keine weiteren Schritte.' },
+        clickfunnels: { label: 'ClickFunnels', text: 'ClickFunnels 1.0 unterstützt kein natives UTM-Passthrough. Gehe zu deiner Funnel-Seite → <strong>Settings → Tracking Code</strong> → füge den Code unten in das <strong>"Body Tracking Code"</strong>-Feld ein. Einmalig pro Seite.' },
+        systeme: { label: 'Systeme.io', text: 'UTM-Parameter werden von Systeme.io <strong>automatisch weitergegeben</strong>. Du musst nichts konfigurieren.' },
+        webflow: { label: 'Webflow', text: 'Wähle dein Typeform-Embed-Element aus → <strong>Settings → "Pass URL Parameters"</strong> aktivieren. Bei Button-Links füge <code>data-tf-transitive-search-params</code> manuell hinzu.' },
+        other: { label: 'Anderer/Custom', text: 'Füge den folgenden Code <strong>einmalig</strong> in den <code>&lt;head&gt;</code> oder vor dem <code>&lt;/body&gt;</code>-Tag deiner Landing Page ein:' },
+      };
+
+      // Highlight selected button
+      document.querySelectorAll('[id^="builder-btn-"]').forEach(btn => {
+        btn.style.background = '';
+        btn.style.color = '';
+      });
+      const selectedBtn = document.getElementById(`builder-btn-${key}`);
+      if (selectedBtn) {
+        selectedBtn.style.background = 'var(--primary-color)';
+        selectedBtn.style.color = 'white';
+      }
+
+      const infoEl = document.getElementById('builder-instructions');
+      const snippetEl = document.getElementById('builder-snippet');
+      if (!infoEl || !snippetEl) return;
+
+      const info = instructions[key];
+      if (!info) return;
+
+      infoEl.style.display = 'block';
+      infoEl.innerHTML = info.text;
+      snippetEl.style.display = (key === 'other' || key === 'clickfunnels') ? 'block' : 'none';
+    },
+
+    copySnippet() {
+      const rawSnippet = `<script>\n(function(){\n  var p=new URLSearchParams(location.search);\n  var keys=['utm_source','utm_medium','utm_campaign','utm_content','utm_term','h_ad_id','fbc_id'];\n  var pairs=keys.filter(function(k){return p.get(k);})\n    .map(function(k){return k+'='+encodeURIComponent(p.get(k));});\n  if(!pairs.length)return;\n  var frag=pairs.join('&');\n  document.querySelectorAll('a[href*="typeform.com"]').forEach(function(a){\n    a.href=a.href.split('#')[0]+'#'+frag;\n  });\n  document.querySelectorAll('[data-tf-widget],[data-tf-popup]').forEach(function(el){\n    el.setAttribute('data-tf-transitive-search-params',keys.join(','));\n  });\n})();\n<\/script>`;
+      navigator.clipboard.writeText(rawSnippet).then(() => {
+        window.Toast && window.Toast.success('Code kopiert!');
+      }).catch(() => {
+        window.Toast && window.Toast.error('Kopieren fehlgeschlagen.');
+      });
+    },
+
+    copyFbTemplate() {
+      const el = document.getElementById('fb-url-template');
+      if (!el) return;
+      navigator.clipboard.writeText(el.value).then(() => {
+        window.Toast && window.Toast.success('URL-Template kopiert!');
+      }).catch(() => {
+        window.Toast && window.Toast.error('Kopieren fehlgeschlagen.');
+      });
     },
 
     renderFormsList() {

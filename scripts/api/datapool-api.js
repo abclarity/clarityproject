@@ -44,10 +44,10 @@
 
   const TRAFFIC_SOURCES = [
     { id: 'facebook-ads', label: 'Facebook Ads', icon: '📘' },
-    { id: 'google-ads', label: 'Google Ads', icon: '🔍' },
-    { id: 'cold-calls', label: 'Cold Calls', icon: '📞' },
-    { id: 'cold-emails', label: 'Cold E-Mails', icon: '📧' },
-    { id: 'organic', label: 'Organic', icon: '🌱' }
+    { id: 'google-ads', label: 'Google Ads', icon: '🔍', disabled: true },
+    { id: 'cold-calls', label: 'Cold Calls', icon: '📞', disabled: true },
+    { id: 'cold-emails', label: 'Cold E-Mails', icon: '📧', disabled: true },
+    { id: 'organic', label: 'Organic', icon: '🌱', disabled: true }
   ];
 
   // ============================================
@@ -182,8 +182,9 @@
         <div id="trafficSourcesContent" class="datapool-content" style="display: ${this.currentMainTab === 'traffic' ? 'block' : 'none'}">
           <div class="datapool-tabs">
             ${TRAFFIC_SOURCES.map(source => `
-              <button class="datapool-tab ${source.id === this.currentTrafficSource ? 'active' : ''}"
-                      data-traffic-source="${source.id}">
+              <button class="datapool-tab ${source.id === this.currentTrafficSource ? 'active' : ''} ${source.disabled ? 'datapool-tab-disabled' : ''}"
+                      data-traffic-source="${source.id}"
+                      ${source.disabled ? 'disabled title="Noch nicht verfügbar"' : ''}>
                 ${source.icon} ${source.label}
               </button>
             `).join('')}
@@ -199,11 +200,11 @@
                       data-level="campaigns">
                 📈 Kampagnen
               </button>
-              <button class="traffic-level-tab disabled"
+              <button class="traffic-level-tab ${this.currentTrafficLevel === 'adsets' ? 'active' : ''}"
                       data-level="adsets">
                 🎯 Ad-Sets
               </button>
-              <button class="traffic-level-tab disabled"
+              <button class="traffic-level-tab ${this.currentTrafficLevel === 'ads' ? 'active' : ''}"
                       data-level="ads">
                 🖼️ Ads
               </button>
@@ -246,6 +247,14 @@
 
           <div id="trafficCampaignsContent" style="display: ${this.currentTrafficLevel === 'campaigns' ? 'block' : 'none'}">
             <div id="facebookTrafficCampaignsContainer"></div>
+          </div>
+
+          <div id="trafficAdsetsContent" style="display: ${this.currentTrafficLevel === 'adsets' ? 'block' : 'none'}">
+            <div id="facebookTrafficAdsetsContainer"></div>
+          </div>
+
+          <div id="trafficAdsContent" style="display: ${this.currentTrafficLevel === 'ads' ? 'block' : 'none'}">
+            <div id="facebookTrafficAdsContainer"></div>
           </div>
         </div>
 
@@ -383,7 +392,7 @@
       });
 
       // Traffic Level Tabs (Drill-Down)
-      document.querySelectorAll('.traffic-level-tab:not(.disabled)').forEach(tab => {
+      document.querySelectorAll('.traffic-level-tab').forEach(tab => {
         tab.addEventListener('click', (e) => {
           const level = e.currentTarget.dataset.level;
           this.switchTrafficLevel(level);
@@ -466,6 +475,9 @@
         });
       }
 
+      {
+      }
+
       const loadMoreBtn = document.getElementById('loadMoreBtn');
       if (loadMoreBtn) {
         loadMoreBtn.addEventListener('click', () => {
@@ -476,7 +488,7 @@
       const addLeadBtn = document.getElementById('addLeadBtn');
       if (addLeadBtn) {
         addLeadBtn.addEventListener('click', () => {
-          this.openAddLeadModal();
+          this.openConversionModal();
         });
       }
 
@@ -654,7 +666,7 @@
         this.currentTrafficLevel = 'overview';
         
         // Update tab UI immediately
-        document.querySelectorAll('.traffic-level-tab:not(.disabled)').forEach(tab => {
+        document.querySelectorAll('.traffic-level-tab').forEach(tab => {
           tab.classList.toggle('active', tab.dataset.level === 'overview');
         });
       }
@@ -682,20 +694,20 @@
       this.currentTrafficLevel = level;
 
       // Toggle active state
-      document.querySelectorAll('.traffic-level-tab:not(.disabled)').forEach(tab => {
+      document.querySelectorAll('.traffic-level-tab').forEach(tab => {
         tab.classList.toggle('active', tab.dataset.level === level);
       });
 
       // Toggle content areas
       const overviewContent = document.getElementById('trafficOverviewContent');
       const campaignsContent = document.getElementById('trafficCampaignsContent');
+      const adsetsContent = document.getElementById('trafficAdsetsContent');
+      const adsContent = document.getElementById('trafficAdsContent');
 
-      if (overviewContent) {
-        overviewContent.style.display = level === 'overview' ? 'block' : 'none';
-      }
-      if (campaignsContent) {
-        campaignsContent.style.display = level === 'campaigns' ? 'block' : 'none';
-      }
+      if (overviewContent) overviewContent.style.display = level === 'overview' ? 'block' : 'none';
+      if (campaignsContent) campaignsContent.style.display = level === 'campaigns' ? 'block' : 'none';
+      if (adsetsContent) adsetsContent.style.display = level === 'adsets' ? 'block' : 'none';
+      if (adsContent) adsContent.style.display = level === 'ads' ? 'block' : 'none';
 
       // Load data for active level
       if (level === 'overview') {
@@ -713,21 +725,34 @@
           this.loadTrafficData();
         }
       } else if (level === 'campaigns') {
-        // Show campaigns view
         if (this.currentTrafficSource === 'facebook-ads' && window.FacebookTraffic) {
-          // Set view before any operations
           window.FacebookTraffic.currentView = 'campaigns';
-          
           if (!window.FacebookTraffic.initialized) {
-            // Initialize with campaigns view already set
             window.FacebookTraffic.init();
           } else {
-            // Just re-render with campaigns view
             window.FacebookTraffic.render();
           }
         } else {
           this.loadCampaignsData();
           this.attachCampaignFilters();
+        }
+      } else if (level === 'adsets') {
+        if (this.currentTrafficSource === 'facebook-ads' && window.FacebookTraffic) {
+          window.FacebookTraffic.currentView = 'adsets';
+          if (!window.FacebookTraffic.initialized) {
+            window.FacebookTraffic.init();
+          } else {
+            window.FacebookTraffic.render();
+          }
+        }
+      } else if (level === 'ads') {
+        if (this.currentTrafficSource === 'facebook-ads' && window.FacebookTraffic) {
+          window.FacebookTraffic.currentView = 'ads';
+          if (!window.FacebookTraffic.initialized) {
+            window.FacebookTraffic.init();
+          } else {
+            window.FacebookTraffic.render();
+          }
         }
       }
     },
@@ -1274,15 +1299,27 @@
       const eventType = EVENT_TYPES.find(t => t.id === this.currentTab);
       if (!eventType) return;
 
+      const isUnit = this.currentTab === 'unit';
+
       const addLeadBtn = document.getElementById('addLeadBtn');
       if (addLeadBtn) {
-        const singular = eventType.label.endsWith('s') ? eventType.label.slice(0, -1) : eventType.label;
-        addLeadBtn.textContent = `➕ Neue${singular.endsWith('e') ? 'r' : 's'} ${singular}`;
+        if (isUnit) {
+          addLeadBtn.style.display = 'none';
+        } else {
+          addLeadBtn.style.display = '';
+          const singular = eventType.label.endsWith('s') ? eventType.label.slice(0, -1) : eventType.label;
+          addLeadBtn.textContent = `➕ ${singular} erfassen`;
+        }
       }
 
       const csvImportBtn = document.getElementById('csvImportBtn');
       if (csvImportBtn) {
-        csvImportBtn.textContent = `📤 CSV Import (${eventType.label})`;
+        csvImportBtn.style.display = isUnit ? 'none' : 'none'; // immer versteckt – Funktion im kombiniertem Modal
+      }
+
+      const unitImportBtn = document.getElementById('unitImportBtn');
+      if (unitImportBtn) {
+        unitImportBtn.style.display = isUnit ? '' : 'none';
       }
     },
 
@@ -1443,6 +1480,7 @@
         if (this.filters.dateTo) {
           query = query.lte('event_date', this.filters.dateTo);
         }
+
 
         // Search filter: First get matching lead IDs if search is active
         let leadIds = null;
@@ -1811,6 +1849,7 @@
           query = query.lte('event_date', this.filters.dateTo);
         }
 
+
         // Search filter: First get matching lead IDs if search is active
         if (this.filters.search) {
           const searchTerm = `%${this.filters.search}%`;
@@ -1958,6 +1997,133 @@
       }
     },
 
+    openConversionModal() {
+      const existing = document.getElementById('conversionModal');
+      if (existing) existing.remove();
+
+      const eventType = EVENT_TYPES.find(t => t.id === this.currentTab);
+      const label = eventType ? eventType.label : 'Event';
+      const singular = label.endsWith('s') ? label.slice(0, -1) : label;
+      const icon = eventType ? eventType.icon : '➕';
+
+      const funnels = window.FunnelAPI?.loadFunnels() || [];
+      const funnelOptions = funnels.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+      const nowLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+      const modal = document.createElement('div');
+      modal.id = 'conversionModal';
+      modal.className = 'modal';
+      modal.innerHTML = `
+        <div class="modal-content unit-import-modal">
+          <div class="modal-header">
+            <h2>${icon} ${singular} erfassen</h2>
+            <button class="close-btn" id="conversionModalCloseBtn">×</button>
+          </div>
+          <div class="unit-import-tabs">
+            <button class="unit-import-tab active" data-tab="manual">Manuell</button>
+            <button class="unit-import-tab" data-tab="csv">CSV hochladen</button>
+          </div>
+          <div id="convTabManual" class="unit-import-tab-content" style="display:block;">
+            <div class="modal-body">
+              <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="convName" placeholder="Max Mustermann" />
+              </div>
+              <div class="form-group">
+                <label>E-Mail *</label>
+                <input type="email" id="convEmail" placeholder="email@beispiel.de" />
+              </div>
+              <div class="form-group">
+                <label>Telefon</label>
+                <input type="text" id="convPhone" placeholder="+49 ..." />
+              </div>
+              <div class="form-group">
+                <label>Funnel</label>
+                <select id="convFunnel">
+                  <option value="">Kein Funnel</option>
+                  ${funnelOptions}
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Zeitpunkt</label>
+                <input type="datetime-local" id="convDate" value="${nowLocal}" />
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn-secondary" id="convManualCancelBtn">Abbrechen</button>
+              <button class="btn-primary" id="convManualSaveBtn">Erstellen</button>
+            </div>
+          </div>
+          <div id="convTabCsv" class="unit-import-tab-content" style="display:none;">
+            <div class="modal-body">
+              <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 16px;">
+                CSV-Datei mit den Event-Daten hochladen. Spalten werden im nächsten Schritt zugeordnet.
+              </p>
+              <div class="file-upload-area" id="convCsvDropZone">
+                <div class="upload-icon">📂</div>
+                <div>CSV-Datei hier ablegen oder klicken</div>
+                <input type="file" id="convCsvFileInput" accept=".csv" style="display:none;" />
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn-secondary" id="convCsvCancelBtn">Abbrechen</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+
+      // Tab switching
+      modal.querySelectorAll('.unit-import-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          modal.querySelectorAll('.unit-import-tab').forEach(t => t.classList.remove('active'));
+          modal.querySelectorAll('.unit-import-tab-content').forEach(c => c.style.display = 'none');
+          tab.classList.add('active');
+          const target = modal.querySelector(`#convTab${tab.dataset.tab.charAt(0).toUpperCase() + tab.dataset.tab.slice(1)}`);
+          if (target) target.style.display = 'block';
+        });
+      });
+
+      modal.querySelector('#conversionModalCloseBtn').addEventListener('click', () => modal.remove());
+      modal.querySelector('#convManualCancelBtn').addEventListener('click', () => modal.remove());
+      modal.querySelector('#convCsvCancelBtn').addEventListener('click', () => modal.remove());
+      modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+      // Manual save → reuse existing createLead logic
+      modal.querySelector('#convManualSaveBtn').addEventListener('click', () => {
+        const email = modal.querySelector('#convEmail').value.trim();
+        if (!email) { window.Toast?.error('E-Mail ist erforderlich'); return; }
+        const name = modal.querySelector('#convName').value.trim();
+        const phone = modal.querySelector('#convPhone').value.trim();
+        const funnelId = modal.querySelector('#convFunnel').value;
+        const dateVal = modal.querySelector('#convDate').value;
+        const eventDate = dateVal ? new Date(dateVal).toISOString() : new Date().toISOString();
+        modal.remove();
+        this._saveConversionEntry({ email, name, phone, funnelId, eventDate });
+      });
+
+      // CSV drop zone → pass file to CSVImportDatapool
+      const dropZone = modal.querySelector('#convCsvDropZone');
+      const fileInput = modal.querySelector('#convCsvFileInput');
+      const launchCsvImport = (file) => {
+        modal.remove();
+        if (window.CSVImportDatapool) {
+          window.CSVImportDatapool.openModal(this.currentTab);
+          // Pre-load file after modal is mounted
+          setTimeout(() => {
+            const dp = window.CSVImportDatapool;
+            if (dp._processFile) dp._processFile(file);
+          }, 100);
+        }
+      };
+      dropZone.addEventListener('click', () => fileInput.click());
+      dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+      dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('dragover'); if (e.dataTransfer.files[0]) launchCsvImport(e.dataTransfer.files[0]); });
+      fileInput.addEventListener('change', () => { if (fileInput.files[0]) launchCsvImport(fileInput.files[0]); });
+    },
+
     openAddLeadModal() {
       const modal = this.createLeadModal(null);
       document.body.appendChild(modal);
@@ -2000,10 +2166,21 @@
         `<option value="${f.id}" ${lead && lead.funnel_id === f.id ? 'selected' : ''}>${f.name}</option>`
       ).join('');
 
+      // Default datetime = now, formatted for datetime-local input
+      const nowLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+        .toISOString().slice(0, 16);
+      const existingDate = lead?.created_at
+        ? new Date(new Date(lead.created_at) - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+        : nowLocal;
+
+      // Determine label for the modal title based on active tab
+      const eventType = EVENT_TYPES.find(t => t.id === this.currentTab);
+      const tabLabel = eventType ? eventType.label : 'Lead';
+
       modal.innerHTML = `
         <div class="modal-content lead-modal">
           <div class="modal-header">
-            <h2>${isEdit ? 'Lead bearbeiten' : 'Neuer Lead'}</h2>
+            <h2>${isEdit ? 'Lead bearbeiten' : tabLabel + ' hinzufügen'}</h2>
             <button class="close-btn" onclick="document.getElementById('leadModal').remove()">×</button>
           </div>
           <div class="modal-body">
@@ -2023,26 +2200,16 @@
             </div>
 
             <div class="form-group">
-              <label>Traffic Source</label>
-              <input type="text" id="leadSource" value="${lead?.source || ''}" />
-            </div>
-
-            <div class="form-group">
-              <label>UTM Campaign</label>
-              <input type="text" id="leadUtmCampaign" value="${lead?.utm_campaign || ''}" />
-            </div>
-
-            <div class="form-group">
-              <label>Land</label>
-              <input type="text" id="leadCountry" value="${lead?.country || ''}" />
-            </div>
-
-            <div class="form-group">
               <label>Funnel</label>
               <select id="leadFunnel">
                 <option value="">Kein Funnel</option>
                 ${funnelOptions}
               </select>
+            </div>
+
+            <div class="form-group">
+              <label>Zeitpunkt der Buchung</label>
+              <input type="datetime-local" id="leadBookingDate" value="${existingDate}" />
             </div>
           </div>
           <div class="modal-footer">
@@ -2079,14 +2246,50 @@
       return modal;
     },
 
+    async _saveConversionEntry({ email, name, phone, funnelId, eventDate }) {
+      const userId = window.AuthAPI?.getUserId();
+      if (!userId) { window.Toast?.error('Nicht eingeloggt'); return; }
+      try {
+        const { data: existingLead } = await window.SupabaseClient
+          .from('leads').select('id').eq('user_id', userId).eq('primary_email', email).maybeSingle();
+
+        let leadId;
+        if (existingLead) {
+          leadId = existingLead.id;
+        } else {
+          const { data: newLead, error: leadError } = await window.SupabaseClient
+            .from('leads')
+            .insert([{ user_id: userId, name: name || null, primary_email: email, emails: [email],
+                        primary_phone: phone || null, phones: phone ? [phone] : [],
+                        funnel_id: funnelId || null, lead_status: 'new',
+                        metadata: { created_from: 'manual' }, created_at: eventDate }])
+            .select().single();
+          if (leadError) { console.error('❌ Lead erstellen fehlgeschlagen:', leadError); window.Toast?.error('Fehler beim Erstellen des Leads'); return; }
+          leadId = newLead.id;
+        }
+
+        const { error: eventError } = await window.SupabaseClient
+          .from('events')
+          .insert([{ user_id: userId, lead_id: leadId, event_type: this.currentTab,
+                      event_date: eventDate, funnel_id: funnelId || null,
+                      is_spam: false, metadata: { created_from: 'manual' } }]);
+        if (eventError) { console.error('❌ Event erstellen fehlgeschlagen:', eventError); window.Toast?.error('Fehler beim Erstellen des Events'); return; }
+
+        window.Toast?.success('Erfolgreich erstellt');
+        await this.loadTabData();
+      } catch (err) {
+        console.error('❌ _saveConversionEntry fehlgeschlagen:', err);
+        window.Toast?.error('Fehler beim Speichern');
+      }
+    },
+
     async createLead() {
       const name = document.getElementById('leadName')?.value.trim();
       const email = document.getElementById('leadEmail')?.value.trim();
       const phone = document.getElementById('leadPhone')?.value.trim();
-      const source = document.getElementById('leadSource')?.value.trim();
-      const utmCampaign = document.getElementById('leadUtmCampaign')?.value.trim();
-      const country = document.getElementById('leadCountry')?.value.trim();
       const funnelId = document.getElementById('leadFunnel')?.value;
+      const bookingDateRaw = document.getElementById('leadBookingDate')?.value;
+      const bookingDate = bookingDateRaw ? new Date(bookingDateRaw).toISOString() : new Date().toISOString();
 
       if (!name || !email) {
         if (window.Toast) {
@@ -2095,43 +2298,59 @@
         return;
       }
 
+      const userId = window.AuthAPI.getUserId();
+
       try {
-        const leadData = {
-          name,
-          primary_email: email,
-          emails: [email],
-          primary_phone: phone || null,
-          phones: phone ? [phone] : [],
-          source: source || null,
-          utm_campaign: utmCampaign || '',
-          country: country || '',
-          funnel_id: funnelId || null,
-          metadata: {}
-        };
-
-        const { data: lead, error: leadError } = await window.SupabaseClient
+        // Check if lead already exists by email
+        let lead = null;
+        const { data: existingLead } = await window.SupabaseClient
           .from('leads')
-          .insert([leadData])
-          .select()
-          .single();
+          .select('id, name, primary_email')
+          .eq('user_id', userId)
+          .eq('primary_email', email)
+          .maybeSingle();
 
-        if (leadError) {
-          console.error('❌ Error creating lead:', leadError);
-          console.error('Lead data attempted:', leadData);
-          if (window.Toast) {
-            window.Toast.error(`Fehler beim Erstellen des Leads: ${leadError.message || leadError.code || 'Unbekannter Fehler'}`);
+        if (existingLead) {
+          lead = existingLead;
+        } else {
+          const leadData = {
+            user_id: userId,
+            name,
+            primary_email: email,
+            emails: [email],
+            primary_phone: phone || null,
+            phones: phone ? [phone] : [],
+            funnel_id: funnelId || null,
+            lead_status: 'new',
+            metadata: { created_from: 'manual' },
+            created_at: bookingDate,
+          };
+
+          const { data: newLead, error: leadError } = await window.SupabaseClient
+            .from('leads')
+            .insert([leadData])
+            .select()
+            .single();
+
+          if (leadError) {
+            console.error('❌ Error creating lead:', leadError);
+            console.error('Lead data attempted:', leadData);
+            if (window.Toast) {
+              window.Toast.error(`Fehler beim Erstellen des Leads: ${leadError.message || leadError.code || 'Unbekannter Fehler'}`);
+            }
+            return;
           }
-          return;
+          lead = newLead;
         }
 
         const eventData = {
-          user_id: window.AuthAPI.getUserId(),
+          user_id: userId,
           lead_id: lead.id,
-          event_type: 'lead',
-          event_date: new Date().toISOString().split('T')[0],
+          event_type: this.currentTab,
+          event_date: bookingDate,
           funnel_id: funnelId || null,
-          source: source || null,
-          metadata: {}
+          is_spam: false,
+          metadata: { created_from: 'manual' },
         };
 
         const { error: eventError } = await window.SupabaseClient
@@ -2139,11 +2358,15 @@
           .insert([eventData]);
 
         if (eventError) {
-          console.error('❌ Error creating lead event:', eventError);
+          console.error('❌ Error creating event:', eventError);
+          if (window.Toast) {
+            window.Toast.error(`Fehler beim Erstellen des Events: ${eventError.message}`);
+          }
+          return;
         }
 
         if (window.Toast) {
-          window.Toast.success('Lead erfolgreich erstellt');
+          window.Toast.success('Erfolgreich erstellt');
         }
 
         document.getElementById('leadModal')?.remove();
@@ -2317,7 +2540,20 @@
           console.error('❌ Error loading events:', eventsError);
         }
 
-        this.showLeadDetailModal(lead, events || []);
+        // Attribution lookup via h_ad_id → traffic_metrics
+        let attribution = null;
+        if (lead.h_ad_id) {
+          const { data: attrData } = await window.SupabaseClient
+            .from('traffic_metrics')
+            .select('campaign_name, ad_set_name, ad_name')
+            .eq('ad_id', lead.h_ad_id)
+            .eq('level', 'ad')
+            .limit(1)
+            .maybeSingle();
+          attribution = attrData || null;
+        }
+
+        this.showLeadDetailModal(lead, events || [], attribution);
       } catch (err) {
         console.error('❌ Error opening lead detail:', err);
         if (window.Toast) {
@@ -2326,17 +2562,20 @@
       }
     },
 
-    showLeadDetailModal(lead, events) {
+    showLeadDetailModal(lead, events, attribution = null) {
       const existingModal = document.getElementById('leadDetailModal');
       if (existingModal) existingModal.remove();
 
       // Check if there are any survey questions in events OR lead metadata
-      const hasSurveyData = 
-        // Check events (CSV import can store in events)
-        events.some(e => 
+      const hasSurveyData =
+        // Any survey/surveyQuali event = always show tab (webhook leads)
+        events.some(e => e.event_type === 'survey' || e.event_type === 'surveyQuali') ||
+        // Check events for stored answers (CSV import)
+        events.some(e =>
           e.metadata && (
             (e.metadata.survey_questions && Object.keys(e.metadata.survey_questions).length > 0) ||
-            (e.metadata.typeform_answers && Object.keys(e.metadata.typeform_answers).length > 0)
+            (e.metadata.typeform_answers && Object.keys(e.metadata.typeform_answers).length > 0) ||
+            (e.metadata.answers && Array.isArray(e.metadata.answers) && e.metadata.answers.length > 0)
           )
         ) ||
         // Check lead metadata (Typeform stores in lead.metadata)
@@ -2344,6 +2583,21 @@
           (lead.metadata.survey_questions && Object.keys(lead.metadata.survey_questions).length > 0) ||
           (lead.metadata.typeform_answers && Object.keys(lead.metadata.typeform_answers).length > 0)
         ));
+
+      // Check if there are any closing call bookings
+      const hasClosingCallData = events.some(e =>
+        e.event_type === 'closingBooking' || e.event_type === 'closingTermin' || e.event_type === 'closingCall'
+      );
+
+      const hasExtraTabs = hasSurveyData || hasClosingCallData;
+
+      // Traffic Source: Facebook Ads wenn Attribution vorhanden, sonst roher source-Wert
+      const trafficSourceLabel = attribution ? 'Facebook Ads' : (lead.source || '-');
+
+      // Funnel Name: Name aus FunnelAPI laden, Fallback auf ID
+      const funnels = window.FunnelAPI?.loadFunnels() || [];
+      const matchedFunnel = funnels.find(f => f.id === lead.funnel_id);
+      const funnelLabel = matchedFunnel ? matchedFunnel.name : (lead.funnel_id || '-');
 
       console.log('🔍 hasSurveyData:', hasSurveyData);
       console.log('  - Events with survey data:', events.filter(e => e.metadata && (e.metadata.survey_questions || e.metadata.typeform_answers)).length);
@@ -2359,10 +2613,11 @@
             <button class="close-btn" onclick="document.getElementById('leadDetailModal').remove()">×</button>
           </div>
 
-          ${hasSurveyData ? `
+          ${hasExtraTabs ? `
             <div class="lead-detail-tabs">
               <button class="lead-tab active" data-tab="journey">User Journey</button>
-              <button class="lead-tab" data-tab="survey">Survey</button>
+              ${hasSurveyData ? `<button class="lead-tab" data-tab="survey">Survey</button>` : ''}
+              ${hasClosingCallData ? `<button class="lead-tab" data-tab="closing">Closing Call</button>` : ''}
             </div>
           ` : ''}
 
@@ -2376,10 +2631,10 @@
                   <strong>Telefon:</strong> ${lead.primary_phone || '-'}
                 </div>
                 <div class="info-group">
-                  <strong>Traffic Source:</strong> ${lead.source || '-'}
+                  <strong>Traffic Source:</strong> ${trafficSourceLabel}
                 </div>
                 <div class="info-group">
-                  <strong>Funnel:</strong> ${lead.funnel_id || '-'}
+                  <strong>Funnel:</strong> ${funnelLabel}
                 </div>
                 <div class="info-group">
                   <strong>Erstellt am:</strong> ${new Date(lead.created_at).toLocaleString('de-DE')}
@@ -2387,13 +2642,18 @@
               </div>
               <div class="lead-timeline">
                 <h3>Timeline</h3>
-                ${this.renderTimelineWithoutSurvey(events)}
+                ${this.renderTimelineWithoutSurvey(events, attribution)}
               </div>
             </div>
 
             ${hasSurveyData ? `
               <div id="surveyTab" class="lead-tab-content">
                 ${this.renderSurveyAnswers(lead, events)}
+              </div>
+            ` : ''}
+            ${hasClosingCallData ? `
+              <div id="closingTab" class="lead-tab-content">
+                ${this.renderClosingCallDetails(events)}
               </div>
             ` : ''}
           </div>
@@ -2403,14 +2663,14 @@
       document.body.appendChild(modal);
 
       // Add tab switching functionality
-      if (hasSurveyData) {
+      if (hasExtraTabs) {
         const tabButtons = modal.querySelectorAll('.lead-tab');
         tabButtons.forEach(btn => {
           btn.addEventListener('click', () => {
             // Remove active class from all tabs and contents
             modal.querySelectorAll('.lead-tab').forEach(t => t.classList.remove('active'));
             modal.querySelectorAll('.lead-tab-content').forEach(c => c.classList.remove('active'));
-            
+
             // Add active class to clicked tab
             btn.classList.add('active');
             const tabName = btn.dataset.tab;
@@ -2432,7 +2692,7 @@
       }, 0);
     },
 
-    renderTimelineWithoutSurvey(events) {
+    renderTimelineWithoutSurvey(events, attribution = null) {
       if (!events || events.length === 0) {
         return '<div class="timeline-empty">Keine Events vorhanden</div>';
       }
@@ -2451,7 +2711,7 @@
         unit: '💰 Unit'
       };
 
-      return events.map(event => {
+      const eventItems = events.map(event => {
         const eventDateTime = new Date(event.event_date);
         const date = eventDateTime.toLocaleDateString('de-DE');
         const time = eventDateTime.toLocaleTimeString('de-DE', {
@@ -2472,11 +2732,32 @@
             </div>
           </div>
         `;
-      }).join('');
+      });
+
+      // Ad-Click-Eintrag: 2 Min vor dem frühesten Event (Events sind absteigend sortiert → letztes = frühestes)
+      if (attribution && attribution.ad_name) {
+        const earliestEvent = events[events.length - 1];
+        const clickTime = new Date(new Date(earliestEvent.event_date).getTime() - 2 * 60 * 1000);
+        const date = clickTime.toLocaleDateString('de-DE');
+        const time = clickTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+
+        eventItems.push(`
+          <div class="timeline-item timeline-item-ad-click">
+            <div class="timeline-date">${date} ${time}</div>
+            <div class="timeline-content">
+              <div class="timeline-label">🖱️ Auf Ad geklickt</div>
+              <div class="timeline-details timeline-ad-name">${attribution.ad_name}</div>
+            </div>
+          </div>
+        `);
+      }
+
+      return eventItems.join('');
     },
 
     renderSurveyAnswers(lead, events) {
       let html = '';
+      let surveyEventFound = false;
 
       // 1. Check lead.metadata for Typeform answers (stored in lead during import)
       if (lead.metadata && lead.metadata.typeform_answers && Object.keys(lead.metadata.typeform_answers).length > 0) {
@@ -2518,33 +2799,68 @@
         `;
       }
 
-      // 2. Check events for survey_questions (CSV import) OR typeform_answers
-      const surveyEvents = events.filter(e => 
-        e.metadata && (
-          e.metadata.survey_questions || 
-          e.metadata.typeform_answers
-        )
+      // 2. Check events for survey_questions (CSV), typeform_answers, or raw answers (webhook fallback)
+      const surveyEvents = events.filter(e =>
+        e.event_type === 'survey' || e.event_type === 'surveyQuali' ||
+        (e.metadata && (e.metadata.survey_questions || e.metadata.typeform_answers))
       );
 
+      // Pre-check: does any survey event have actual answers?
+      const anyEventHasAnswers = surveyEvents.some(e => {
+        const q = (e.metadata?.survey_questions) || (e.metadata?.typeform_answers);
+        if (q && Object.keys(q).length > 0) return true;
+        if (e.metadata?.answers && Array.isArray(e.metadata.answers)) {
+          return e.metadata.answers.some(a => a.type !== 'email' && a.type !== 'phone_number');
+        }
+        return false;
+      });
+
       surveyEvents.forEach(event => {
+        surveyEventFound = true;
         const eventDateTime = new Date(event.event_date);
         const date = eventDateTime.toLocaleDateString('de-DE');
-        const time = eventDateTime.toLocaleTimeString('de-DE', {
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-        
-        // Get questions from either CSV import or Typeform
-        const questions = event.metadata.survey_questions || event.metadata.typeform_answers || {};
+        const time = eventDateTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+
+        // Get questions: prefer formatted answers, fall back to raw answers array
+        let questions = (event.metadata?.survey_questions) || (event.metadata?.typeform_answers) || null;
+
+        // If questions is empty/null but raw answers exist, build from raw array
+        if ((!questions || Object.keys(questions).length === 0) && event.metadata?.answers && Array.isArray(event.metadata.answers)) {
+          questions = {};
+          event.metadata.answers.forEach(a => {
+            if (a.type === 'email' || a.type === 'phone_number') return;
+            let val = a[a.type];
+            if (val && typeof val === 'object' && val.label) val = val.label;
+            if (val && typeof val === 'object' && Array.isArray(val.labels)) val = val.labels.join(', ');
+            if (typeof val === 'boolean') val = val ? 'Ja' : 'Nein';
+            if (typeof val === 'number') val = String(val);
+            const label = a.field?.ref || a.field?.id || 'Frage';
+            if (val) questions[label] = String(val);
+          });
+        }
+
+        // No answers: skip silently if answers already exist anywhere (lead metadata or other events)
+        if (!questions || Object.keys(questions).length === 0) {
+          if (html.length > 0 || anyEventHasAnswers) return; // hide duplicate empty event
+          const icon = event.event_type === 'surveyQuali' ? '✅' : '📋';
+          const label = event.event_type === 'surveyQuali' ? 'Survey Qualifiziert' : 'Typeform Survey';
+          html += `
+            <div class="survey-section">
+              <div class="survey-section-header">
+                <span class="survey-icon">${icon}</span>
+                <span class="survey-event-type">${label}</span>
+                <span class="survey-date">${date} ${time}</span>
+              </div>
+              <div class="survey-empty" style="padding:12px 0;color:#999;font-size:14px;">Survey erfasst – Antworten nicht verfügbar</div>
+            </div>
+          `;
+          return;
+        }
 
         let questionsHTML = '';
         Object.entries(questions).forEach(([question, answer]) => {
-          // Handle Multiple-Choice objects: { id, ref, label }
           let displayAnswer = answer;
-          if (typeof answer === 'object' && answer !== null && answer.label) {
-            displayAnswer = answer.label;
-          }
-          
+          if (typeof answer === 'object' && answer !== null && answer.label) displayAnswer = answer.label;
           questionsHTML += `
             <div class="survey-answer-item">
               <div class="survey-question">${question}</div>
@@ -2553,11 +2869,13 @@
           `;
         });
 
+        const icon = event.event_type === 'surveyQuali' ? '✅' : '📋';
+        const label = event.event_type === 'surveyQuali' ? 'Survey Qualifiziert' : 'Typeform Survey';
         html += `
           <div class="survey-section">
             <div class="survey-section-header">
-              <span class="survey-icon">📋</span>
-              <span class="survey-event-type">${event.event_type}</span>
+              <span class="survey-icon">${icon}</span>
+              <span class="survey-event-type">${label}</span>
               <span class="survey-date">${date} ${time}</span>
             </div>
             <div class="survey-answers">
@@ -2568,17 +2886,88 @@
       });
 
       if (!html) {
+        if (surveyEventFound) {
+          return '<div class="survey-empty">Survey erfasst – Antworten nicht verfügbar</div>';
+        }
         return '<div class="survey-empty">Keine Survey-Daten vorhanden</div>';
       }
 
       return html;
     },
 
+    renderClosingCallDetails(events) {
+      const closingEvents = events.filter(e =>
+        e.event_type === 'closingBooking' || e.event_type === 'closingTermin' || e.event_type === 'closingCall'
+      );
+
+      if (closingEvents.length === 0) {
+        return '<div class="survey-empty">Keine Closing-Call-Daten vorhanden</div>';
+      }
+
+      const eventLabels = {
+        closingBooking: { icon: '🥇', label: 'Closing Call gebucht' },
+        closingTermin:  { icon: '🎯', label: 'Closing Termin bestätigt' },
+        closingCall:    { icon: '📞', label: 'Closing Call' }
+      };
+
+      return closingEvents.map(event => {
+        const meta = event.metadata || {};
+        const { icon, label } = eventLabels[event.event_type] || { icon: '📅', label: event.event_type };
+
+        // When was the call booked?
+        const bookedAt = meta.booking_created_at || event.event_date;
+        const bookedDate = new Date(bookedAt);
+        const bookedStr = bookedDate.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
+
+        // When is the call scheduled?
+        let scheduledStr = '-';
+        if (meta.call_scheduled_time) {
+          const scheduledDate = new Date(meta.call_scheduled_time);
+          scheduledStr = scheduledDate.toLocaleString('de-DE', { dateStyle: 'full', timeStyle: 'short' });
+        }
+
+        // Booking answers (from Calendly form)
+        let bookingAnswersItems = '';
+        if (meta.booking_answers && Object.keys(meta.booking_answers).length > 0) {
+          Object.entries(meta.booking_answers).forEach(([question, answer]) => {
+            if (!answer) return;
+            bookingAnswersItems += `
+              <div class="survey-answer-item">
+                <div class="survey-question">${question}</div>
+                <div class="survey-answer">${answer}</div>
+              </div>
+            `;
+          });
+        }
+
+        return `
+          <div class="survey-section">
+            <div class="survey-section-header">
+              <span class="survey-icon">${icon}</span>
+              <span class="survey-event-type">${label}</span>
+              <span class="survey-date">${new Date(event.event_date).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+            </div>
+            <div class="survey-answers">
+              <div class="survey-answer-item">
+                <div class="survey-question">Call findet statt am</div>
+                <div class="survey-answer closing-call-scheduled">${scheduledStr}</div>
+              </div>
+              ${bookingAnswersItems}
+              <div class="survey-answer-item">
+                <div class="survey-question">Gebucht am</div>
+                <div class="survey-answer">${bookedStr}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    },
+
     // ============================================
     // UNIT IMPORT
     // ============================================
 
-    openUnitImportModal() {
+    openUnitImportModal(defaultTab = 'manual') {
       const existing = document.getElementById('unitImportModal');
       if (existing) existing.remove();
 
@@ -2586,6 +2975,16 @@
       const funnelOptions = funnels.map(f =>
         `<option value="${f.id}">${f.name}</option>`
       ).join('');
+
+      // Pre-compute Google Sheet link HTML (avoid nested template literals)
+      const unitSavedUrl = localStorage.getItem('clarity_units_sheet_url') || '';
+      let unitSheetHtml = '<div class="unit-csv-format-hint" style="margin-top: 8px;"><div style="font-size: 13px; color: #7f8c8d; margin-bottom: 6px;">Dein Google Sheet</div>';
+      if (unitSavedUrl) {
+        unitSheetHtml += '<div style="display: flex; align-items: center; gap: 8px;"><a id="unitSheetLink" href="' + unitSavedUrl + '" target="_blank" rel="noopener noreferrer" style="flex: 1; color: #1a73e8; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📊 Google Sheet öffnen</a><button id="unitSheetEditBtn" class="btn-secondary" style="font-size: 11px; padding: 4px 8px; flex-shrink: 0;">✏️ Ändern</button></div><div id="unitSheetInputWrap" style="display:none; margin-top: 6px;">';
+      } else {
+        unitSheetHtml += '<div id="unitSheetInputWrap">';
+      }
+      unitSheetHtml += '<div style="display: flex; gap: 8px; margin-top: 4px;"><input id="unitSheetInput" type="url" placeholder="https://docs.google.com/spreadsheets/d/..." value="' + unitSavedUrl + '" style="flex: 1; font-size: 13px; padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px;" /><button id="unitSheetSaveBtn" class="btn-primary" style="font-size: 12px; padding: 6px 12px; flex-shrink: 0;">Speichern</button></div></div></div>';
 
       const modal = document.createElement('div');
       modal.id = 'unitImportModal';
@@ -2658,12 +3057,17 @@
           <div id="unitTabCsv" class="unit-import-tab-content" style="display:none;">
             <div class="modal-body">
               <div class="unit-csv-format-hint">
-                <strong>Erforderliches Format:</strong>
-                <code>email, datum, revenue, uf_cash</code>
-                <div style="margin-top: 6px; color: #7f8c8d; font-size: 12px;">
-                  Datum-Format: YYYY-MM-DD (z.B. 2026-03-18) · Dezimaltrennzeichen: Punkt
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                  <div>
+                    <strong>Spalten:</strong> <code>email, datum, revenue, uf_cash</code>
+                    <div style="margin-top: 4px; color: #7f8c8d; font-size: 12px;">
+                      Datum-Format: YYYY-MM-DD · Dezimaltrennzeichen: Punkt
+                    </div>
+                  </div>
+                  <button id="unitCsvDownloadTemplate" class="btn-secondary" style="white-space: nowrap; flex-shrink: 0;">⬇️ Vorlage</button>
                 </div>
               </div>
+              ${unitSheetHtml}
 
               <div class="file-upload-area" id="unitCsvDropZone">
                 <div class="upload-icon">📂</div>
@@ -2681,13 +3085,6 @@
                 <div id="unitCsvPreviewMeta" style="font-size:13px; color:#7f8c8d; margin-top:8px;"></div>
               </div>
 
-              <div id="unitCsvFunnelRow" class="form-group" style="display:none; margin-top:16px;">
-                <label>Funnel für alle Zeilen</label>
-                <select id="unitCsvFunnel">
-                  <option value="">— Kein Funnel —</option>
-                  ${funnelOptions}
-                </select>
-              </div>
             </div>
             <div class="modal-footer">
               <button class="btn-secondary" id="unitCsvCancelBtn">Abbrechen</button>
@@ -2699,6 +3096,11 @@
 
       document.body.appendChild(modal);
       this._bindUnitImportModal(modal);
+
+      if (defaultTab === 'csv') {
+        const csvTab = modal.querySelector('[data-tab="csv"]');
+        if (csvTab) csvTab.click();
+      }
     },
 
     _bindUnitImportModal(modal) {
@@ -2722,6 +3124,31 @@
       // Cancel buttons
       modal.querySelector('#unitManualCancelBtn').addEventListener('click', () => modal.remove());
       modal.querySelector('#unitCsvCancelBtn').addEventListener('click', () => modal.remove());
+
+      // Download CSV template
+      modal.querySelector('#unitCsvDownloadTemplate').addEventListener('click', () => {
+        const today = new Date().toISOString().slice(0, 10);
+        const csv = `email,datum,revenue,uf_cash\nmax.mustermann@email.de,${today},3000,1500`;
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'clarity_units_vorlage.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+
+      // Google Sheet link – save & edit
+      modal.querySelector('#unitSheetSaveBtn')?.addEventListener('click', () => {
+        const url = modal.querySelector('#unitSheetInput')?.value?.trim();
+        if (!url) return;
+        localStorage.setItem('clarity_units_sheet_url', url);
+        this.openUnitImportModal('csv');
+      });
+      modal.querySelector('#unitSheetEditBtn')?.addEventListener('click', () => {
+        const wrap = modal.querySelector('#unitSheetInputWrap');
+        if (wrap) wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+      });
 
       // Add installment row
       modal.querySelector('#addInstallmentBtn').addEventListener('click', () => {
@@ -2954,7 +3381,6 @@
         const thead = modal.querySelector('#unitCsvPreviewHead');
         const tbody = modal.querySelector('#unitCsvPreviewBody');
         const meta = modal.querySelector('#unitCsvPreviewMeta');
-        const funnelRow = modal.querySelector('#unitCsvFunnelRow');
 
         thead.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
         tbody.innerHTML = rows.slice(0, 5).map(row =>
@@ -2963,7 +3389,6 @@
 
         meta.textContent = `${rows.length} Zeile(n) gefunden${rows.length > 5 ? ' (Vorschau: erste 5)' : ''}`;
         previewArea.style.display = 'block';
-        funnelRow.style.display = 'block';
         modal.querySelector('#unitCsvImportBtn').disabled = false;
 
         onParsed(rows);
@@ -2972,7 +3397,6 @@
     },
 
     async _importUnitCsvRows(modal, rows) {
-      const funnelId = modal.querySelector('#unitCsvFunnel').value || null;
       const importBtn = modal.querySelector('#unitCsvImportBtn');
       importBtn.disabled = true;
       importBtn.textContent = 'Importiere...';
@@ -2983,8 +3407,8 @@
         const entry = {
           email: (row.email || '').toLowerCase().trim(),
           name: row.name || '',
-          date: row.datum,
-          funnelId,
+          date: window.CSVImportDatapool?.parseEventDate(row.datum) || row.datum,
+          funnelId: null, // wird automatisch vom Lead übernommen
           revenue: parseFloat(row.revenue) || 0,
           ufCash: parseFloat(row.uf_cash) || 0,
           installments: []
@@ -3003,6 +3427,10 @@
     },
 
     openCSVImport() {
+      if (this.currentTab === 'unit') {
+        this.openUnitImportModal('csv');
+        return;
+      }
       if (window.CSVImportDatapool) {
         window.CSVImportDatapool.openModal(this.currentTab);
       } else {

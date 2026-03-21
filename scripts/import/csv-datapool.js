@@ -131,6 +131,43 @@
       const existingModal = document.getElementById('csvImportDatapoolModal');
       if (existingModal) existingModal.remove();
 
+      // Pre-compute unit-specific HTML blocks before template literal
+      const isUnit = defaultEventType === 'unit';
+      const savedSheetUrl = isUnit ? (localStorage.getItem('clarity_units_sheet_url') || '') : '';
+      const unitFormatHint = isUnit ? `
+        <div class="unit-csv-format-hint" style="margin-bottom: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <div>
+              <strong>Spalten:</strong> <code>email, datum, revenue, uf_cash</code>
+              <div style="margin-top: 4px; color: #7f8c8d; font-size: 12px;">
+                Datum-Format: YYYY-MM-DD · Dezimaltrennzeichen: Punkt
+              </div>
+            </div>
+            <button id="csvDpDownloadTemplate" class="btn-secondary" style="white-space: nowrap; flex-shrink: 0;">⬇️ Vorlage</button>
+          </div>
+        </div>
+        <div class="unit-csv-format-hint" style="margin-bottom: 12px;">
+          <div style="font-size: 13px; color: #7f8c8d; margin-bottom: 6px;">Dein Google Sheet</div>
+          ${savedSheetUrl
+            ? `<div style="display: flex; align-items: center; gap: 8px;">
+                <a id="csvDpSheetLink" href="${savedSheetUrl}" target="_blank" rel="noopener noreferrer"
+                   style="flex: 1; color: #1a73e8; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                  📊 Google Sheet öffnen
+                </a>
+                <button id="csvDpSheetEdit" class="btn-secondary" style="font-size: 11px; padding: 4px 8px; flex-shrink: 0;">✏️ Ändern</button>
+              </div>
+              <div id="csvDpSheetInputWrap" style="display: none; margin-top: 6px;">`
+            : `<div id="csvDpSheetInputWrap">`}
+            <div style="display: flex; gap: 8px; margin-top: 4px;">
+              <input id="csvDpSheetInput" type="url" placeholder="https://docs.google.com/spreadsheets/d/..."
+                     value="${savedSheetUrl}"
+                     style="flex: 1; font-size: 13px; padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px;" />
+              <button id="csvDpSheetSave" class="btn-primary" style="font-size: 12px; padding: 6px 12px; flex-shrink: 0;">Speichern</button>
+            </div>
+          </div>
+        </div>
+      ` : '';
+
       const modal = document.createElement('div');
       modal.id = 'csvImportDatapoolModal';
       modal.className = 'modal';
@@ -143,6 +180,7 @@
 
           <div id="csvStep1" class="csv-step">
             <p>Importiere deine historischen Event-Daten in den Datenpool.</p>
+            ${unitFormatHint}
             <div class="file-upload-area" id="fileUploadArea">
               <div class="upload-icon">📁</div>
               <p><strong>CSV-Datei hier ablegen</strong> oder klicken zum Auswählen</p>
@@ -247,6 +285,43 @@
 
       document.body.appendChild(modal);
 
+      // Template download for unit imports
+      const templateBtn = document.getElementById('csvDpDownloadTemplate');
+      if (templateBtn) {
+        templateBtn.addEventListener('click', () => {
+          const today = new Date().toISOString().slice(0, 10);
+          const csv = `email,datum,revenue,uf_cash\nmax.mustermann@email.de,${today},3000,1500`;
+          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'clarity_units_vorlage.csv';
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+      }
+
+      // Google Sheet link – save & edit
+      const sheetSaveBtn = document.getElementById('csvDpSheetSave');
+      if (sheetSaveBtn) {
+        sheetSaveBtn.addEventListener('click', () => {
+          const input = document.getElementById('csvDpSheetInput');
+          const url = input?.value?.trim();
+          if (!url) return;
+          localStorage.setItem('clarity_units_sheet_url', url);
+          // Reload modal to reflect saved state
+          window.CSVImportDatapool.openModal('unit');
+        });
+      }
+
+      const sheetEditBtn = document.getElementById('csvDpSheetEdit');
+      if (sheetEditBtn) {
+        sheetEditBtn.addEventListener('click', () => {
+          const wrap = document.getElementById('csvDpSheetInputWrap');
+          if (wrap) wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+        });
+      }
+
       this.attachListeners();
 
       // Click outside to close
@@ -297,6 +372,11 @@
           this.closeModal();
         }
       });
+    },
+
+    // Pre-load a file (called from combined conversion modal)
+    _processFile(file) {
+      this.handleFile(file);
     },
 
     closeModal() {

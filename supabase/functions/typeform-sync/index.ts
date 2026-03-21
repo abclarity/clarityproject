@@ -23,6 +23,8 @@ interface TypeformForm {
     type: string;
     properties?: any;
   }>;
+  hidden?: string[];
+  [key: string]: any; // allow spread for PUT body
 }
 
 interface TypeformWebhookResponse {
@@ -248,6 +250,49 @@ Deno.serve(async (req) => {
       const webhookData: TypeformWebhookResponse = await webhookResponse.json();
       console.log(`✅ Webhook created: ${webhookData.id}`);
 
+      // Auto-setup UTM hidden fields on the Typeform form
+      const UTM_HIDDEN_FIELDS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'h_ad_id'];
+      let hiddenFieldsSetup = false;
+      try {
+        const currentHidden: string[] = formData.hidden || [];
+        const missingFields = UTM_HIDDEN_FIELDS.filter(f => !currentHidden.includes(f));
+
+        if (missingFields.length > 0) {
+          const updatedHidden = [...currentHidden, ...missingFields];
+          const putResponse = await fetch(`${TYPEFORM_API_URL}/forms/${form_id}`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${connection.access_token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              title: formData.title,
+              fields: formData.fields,
+              hidden: updatedHidden,
+              settings: formData.settings,
+              theme: formData.theme,
+              workspace: formData.workspace,
+              welcome_screens: formData.welcome_screens,
+              thankyou_screens: formData.thankyou_screens,
+              logic: formData.logic,
+            }),
+          });
+
+          if (putResponse.ok) {
+            console.log(`✅ UTM hidden fields added to form: ${missingFields.join(', ')}`);
+            hiddenFieldsSetup = true;
+          } else {
+            const errText = await putResponse.text();
+            console.error('❌ Failed to add UTM hidden fields:', errText);
+          }
+        } else {
+          console.log('✅ UTM hidden fields already present on form');
+          hiddenFieldsSetup = true;
+        }
+      } catch (err) {
+        console.error('❌ Error setting up UTM hidden fields:', err);
+      }
+
       // Save form mapping to database
       const { error: dbError } = await supabase
         .from('typeform_forms')
@@ -279,10 +324,11 @@ Deno.serve(async (req) => {
 
       console.log('✅ Form mapping saved to database');
 
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         success: true,
         webhook_id: webhookData.id,
         form_title: formData.title,
+        hidden_fields_setup: hiddenFieldsSetup,
       }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -538,6 +584,12 @@ Deno.serve(async (req) => {
               lead_source: 'typeform',
               lead_status: spam.isSpam ? 'spam' : 'new',
               is_spam: spam.isSpam,
+              utm_campaign: response.hidden?.utm_campaign || null,
+              utm_source:   response.hidden?.utm_source   || null,
+              utm_medium:   response.hidden?.utm_medium   || null,
+              utm_content:  response.hidden?.utm_content  || null,
+              utm_term:     response.hidden?.utm_term     || null,
+              h_ad_id:      response.hidden?.h_ad_id      || null,
               metadata: leadMetadata,
               created_at: response.submitted_at || new Date().toISOString(),
             }, {
@@ -781,7 +833,7 @@ function detectSpam(
   if (CONS4.test(n)) { score += 2; reasons.push('keyboard mash in name'); }
 
   // Name has a part ≥ 2 chars with zero vowels (e.g. "ds", "hhh", "sfsdfs")
-  const hasAllConsonantPart = n.split(/\s+/).some(p => p.length >= 2 && !VOWELS.test(p));
+  const hasAllConsonantPart = n.split(/\s+/).some(p => p.length >= 4 && !/\d/.test(p) && !VOWELS.test(p));
   if (hasAllConsonantPart) { score += 2; reasons.push('consonant-only word in name'); }
 
   const nameParts = n.split(/\s+/).filter(p => p.length > 0);
@@ -795,13 +847,19 @@ function detectSpam(
   if (n.length === 1) { score += 3; reasons.push('single letter as name'); }
 
   // Keyboard mash in email local part (3+ consecutive consonants) – skipped for trusted providers
-  if (/[bcdfghjklmnpqrstvwxyz]{3,}/i.test(local) && !TRUSTED_EMAIL_DOMAINS.includes(domain)) { score += 1; reasons.push('keyboard mash in email'); }
+  if (/[bcdfghjklmnpqrstvwxyz]{5,}/i.test(local) && !TRUSTED_EMAIL_DOMAINS.includes(domain)) { score += 1; reasons.push('keyboard mash in email'); }
   if (CONS4.test(answers)) { score += 1; reasons.push('keyboard mash in answers'); }
 
-  // Any individual answer that contains zero vowels (e.g. "Ff", "ds", "byjyk")
-  const anyAnswerNoVowels = Object.values(surveyAnswers).some((v: any) =>
-    typeof v === 'string' && v.trim().length >= 2 && !VOWELS.test(v)
-  );
+  // Any individual answer that contains zero vowels (e.g. "Ff", "ds", "byjyk") — skip phone-like values
+  const PHONE_LIKE = /^[+\d\s\-().\/]{4,}$/;
+  const anyAnswerNoVowels = Object.values(surveyAnswers).some((v: any) => {
+    if (typeof v !== 'string') return false;
+    const trimmed = v.trim();
+    if (trimmed.length < 2) return false;
+    if (PHONE_LIKE.test(trimmed)) return false;
+    if ((trimmed.match(/[a-zA-ZäöüÄÖÜ]/g) || []).length < 2) return false; // skip values with no/few letters (times, dates, numbers)
+    return !VOWELS.test(trimmed);
+  });
   if (anyAnswerNoVowels) { score += 2; reasons.push('answer with no vowels'); }
 
   return { isSpam: score >= 3, score, reasons };

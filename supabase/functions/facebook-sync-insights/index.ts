@@ -171,81 +171,151 @@ serve(async (req) => {
           return null;
         };
 
-        // Insert/update insights into traffic_metrics (with filter)
-        let filtered = 0;
-        let inserted = 0;
-        const errors: string[] = [];
-        
-        
-        
-        for (const insight of insights) {
-          // Apply campaign filter
-          if (!matchesFilter(insight.campaign_name)) {
-            
-            filtered++;
-            continue;
-          }
-
-          const funnelId = matchFunnel(insight.campaign_name);
-
-          // Calculate link_ctr and link_cpc based on actions (link clicks)
+        // Helper: calculate link clicks from actions
+        const calcLinkClicks = (insight: any): number => {
           const allClicks = parseInt(insight.clicks || '0');
           const actions = Array.isArray(insight.actions) ? insight.actions : [];
           const getActionValue = (type: string) => {
             const entry = actions.find((a: any) => a.action_type === type);
             return entry ? parseInt(entry.value || '0') : 0;
           };
-
           let linkClicks = getActionValue('link_click') + getActionValue('outbound_click');
-          if (linkClicks === 0 && allClicks > 0) {
-            linkClicks = allClicks;
-          }
+          if (linkClicks === 0 && allClicks > 0) linkClicks = allClicks;
+          return linkClicks;
+        };
 
-          const impressions = parseInt(insight.impressions || '0');
-          const spend = parseFloat(insight.spend || '0');
-          const linkCtr = impressions > 0 ? (linkClicks / impressions * 100) : 0;
-          const linkCpc = linkClicks > 0 ? spend / linkClicks : 0;
+        // Insert/update insights into traffic_metrics (with filter)
+        let filtered = 0;
+        let inserted = 0;
+        const errors: string[] = [];
 
-          const metricData = {
-            user_id: userId,
-            date: insight.date_start,
-            source: 'facebook-ads',
-            campaign_id: insight.campaign_id,
-            campaign_name: insight.campaign_name,
-            funnel_id: funnelId,
-            level: 'campaign',
-            adspend: spend,
-            impressions: impressions,
-            clicks: linkClicks, // Use link_clicks (or fallback to clicks)
-            reach: parseInt(insight.reach || '0'),
-            metadata: {
-              cpm: parseFloat(insight.cpm || '0'),
-              cpc: linkCpc, // Link CPC
-              ctr: linkCtr, // Link CTR (as %)
-              frequency: parseFloat(insight.frequency || '0'),
-              ad_account_id: adAccountId,
-              currency: account.currency,
-              all_clicks: allClicks, // Store total clicks for reference
-              link_clicks: linkClicks // Store derived link clicks
-            }
-          };
+        // ── Campaign-level sync: delete existing rows, then bulk insert ───────
+        await supabase
+          .from('traffic_metrics')
+          .delete()
+          .eq('user_id', userId)
+          .eq('source', 'facebook-ads')
+          .eq('level', 'campaign')
+          .gte('date', dateFrom)
+          .lte('date', dateTo);
 
-          const { error: insertError } = await supabase
-            .from('traffic_metrics')
-            .upsert(metricData, {
-              onConflict: 'user_id,campaign_id,date,level',
-              ignoreDuplicates: false
-            });
+        const campaignRows = insights
+          .filter((insight: any) => {
+            if (!matchesFilter(insight.campaign_name)) { filtered++; return false; }
+            return true;
+          })
+          .map((insight: any) => {
+            const lc = calcLinkClicks(insight);
+            const imp = parseInt(insight.impressions || '0');
+            const sp = parseFloat(insight.spend || '0');
+            return {
+              user_id: userId,
+              date: insight.date_start,
+              source: 'facebook-ads',
+              campaign_id: insight.campaign_id,
+              campaign_name: insight.campaign_name,
+              funnel_id: matchFunnel(insight.campaign_name),
+              level: 'campaign',
+              adspend: sp,
+              impressions: imp,
+              clicks: lc,
+              reach: parseInt(insight.reach || '0'),
+              metadata: {
+                cpm: parseFloat(insight.cpm || '0'),
+                cpc: lc > 0 ? sp / lc : 0,
+                ctr: imp > 0 ? (lc / imp * 100) : 0,
+                frequency: parseFloat(insight.frequency || '0'),
+                ad_account_id: adAccountId,
+                currency: account.currency,
+                all_clicks: parseInt(insight.clicks || '0'),
+                link_clicks: lc,
+              }
+            };
+          });
 
-          if (insertError) {
-            console.error(`❌ Error inserting metric for ${metricData.campaign_name} (${metricData.date}):`, insertError);
-            errors.push(insertError.message || JSON.stringify(insertError));
-            totalErrors++;
+        if (campaignRows.length > 0) {
+          const { error: bulkCampaignError } = await supabase.from('traffic_metrics').insert(campaignRows);
+          if (bulkCampaignError) {
+            console.error('❌ Campaign bulk insert error:', bulkCampaignError);
+            errors.push(bulkCampaignError.message);
+            totalErrors += campaignRows.length;
           } else {
-            
-            totalInserted++;
-            inserted++;
+            inserted = campaignRows.length;
+            totalInserted += inserted;
           }
+        }
+
+        // ── Ad-level sync (for h_ad_id lookup: ad_id → campaign/adset names) ─
+        try {
+          const adInsightsUrl = `https://graph.facebook.com/v19.0/${adAccountId}/insights?` +
+            `level=ad` +
+            `&fields=ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,spend,impressions,clicks,reach,actions` +
+            `&time_range={"since":"${dateFrom}","until":"${dateTo}"}` +
+            `&time_increment=1` +
+            `&access_token=${accessToken}` +
+            `&limit=500`;
+
+          const adResponse = await fetch(adInsightsUrl);
+          if (!adResponse.ok) {
+            console.error('❌ Ad-level API error:', await adResponse.text());
+          } else {
+            const adData = await adResponse.json();
+            const adInsights = adData.data || [];
+            console.log(`Ad-level: ${adInsights.length} insights for ${adAccountId}`);
+
+            // Delete existing ad-level rows for this date range, then re-insert
+            await supabase
+              .from('traffic_metrics')
+              .delete()
+              .eq('user_id', userId)
+              .eq('source', 'facebook-ads')
+              .eq('level', 'ad')
+              .gte('date', dateFrom)
+              .lte('date', dateTo);
+
+            const adRows = adInsights
+              .filter((ad: any) => ad.ad_id && matchesFilter(ad.campaign_name))
+              .map((ad: any) => {
+                const lc = calcLinkClicks(ad);
+                const imp = parseInt(ad.impressions || '0');
+                const sp = parseFloat(ad.spend || '0');
+                return {
+                  user_id: userId,
+                  date: ad.date_start,
+                  source: 'facebook-ads',
+                  campaign_id: ad.campaign_id,
+                  campaign_name: ad.campaign_name,
+                  ad_set_id: ad.adset_id,
+                  ad_set_name: ad.adset_name,
+                  ad_id: ad.ad_id,
+                  ad_name: ad.ad_name,
+                  funnel_id: matchFunnel(ad.campaign_name),
+                  level: 'ad',
+                  adspend: sp,
+                  impressions: imp,
+                  clicks: lc,
+                  reach: parseInt(ad.reach || '0'),
+                  metadata: {
+                    cpm: parseFloat(ad.cpm || '0'),
+                    cpc: lc > 0 ? sp / lc : 0,
+                    ctr: imp > 0 ? (lc / imp * 100) : 0,
+                    ad_account_id: adAccountId,
+                    currency: account.currency,
+                  }
+                };
+              });
+
+            if (adRows.length > 0) {
+              const { error: bulkError } = await supabase.from('traffic_metrics').insert(adRows);
+              if (bulkError) {
+                console.error('❌ Ad bulk insert error:', bulkError);
+              } else {
+                console.log(`✅ Ad-level sync done: ${adRows.length} rows inserted`);
+              }
+            }
+          }
+        } catch (adSyncErr: any) {
+          console.error('❌ Ad-level sync failed:', adSyncErr);
         }
 
         // Update last_sync timestamp
@@ -264,7 +334,7 @@ serve(async (req) => {
           filtered_count: filtered,
           inserted_count: inserted,
           status: inserted > 0 ? 'success' : 'no_data_inserted',
-          errors: errors.length > 0 ? errors : undefined
+          errors: errors.length > 0 ? errors : undefined,
         });
         
         console.log(`✅ Account ${account.name}: ${insights.length} insights fetched, ${filtered} filtered, ${inserted} inserted`);

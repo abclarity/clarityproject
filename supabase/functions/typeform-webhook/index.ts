@@ -203,6 +203,25 @@ serve(async (req) => {
       if (leadData.phone && !existingLead.primary_phone) {
         updateData.primary_phone = leadData.phone;
       }
+      // Fill UTM fields if not yet set (first time we see this lead with UTM data)
+      if (!existingLead.utm_campaign && form_response.hidden?.utm_campaign) {
+        updateData.utm_campaign = form_response.hidden.utm_campaign;
+      }
+      if (!existingLead.utm_source && form_response.hidden?.utm_source) {
+        updateData.utm_source = form_response.hidden.utm_source;
+      }
+      if (!existingLead.utm_medium && form_response.hidden?.utm_medium) {
+        updateData.utm_medium = form_response.hidden.utm_medium;
+      }
+      if (!existingLead.utm_content && form_response.hidden?.utm_content) {
+        updateData.utm_content = form_response.hidden.utm_content;
+      }
+      if (!existingLead.utm_term && form_response.hidden?.utm_term) {
+        updateData.utm_term = form_response.hidden.utm_term;
+      }
+      if (!existingLead.h_ad_id && form_response.hidden?.h_ad_id) {
+        updateData.h_ad_id = form_response.hidden.h_ad_id;
+      }
 
       await supabase
         .from('leads')
@@ -228,13 +247,16 @@ serve(async (req) => {
           lead_status: spam.isSpam ? 'spam' : 'new',
           is_spam: spam.isSpam,
           utm_campaign: form_response.hidden?.utm_campaign || null,
+          utm_source:  form_response.hidden?.utm_source  || null,
+          utm_medium:  form_response.hidden?.utm_medium  || null,
+          utm_content: form_response.hidden?.utm_content || null,
+          utm_term:    form_response.hidden?.utm_term    || null,
+          h_ad_id:     form_response.hidden?.h_ad_id     || null,
           metadata: {
             typeform_form_id: formId,
             typeform_response_id: responseId,
             typeform_submitted_at: form_response.submitted_at,
             typeform_answers: surveyAnswers,
-            utm_source: form_response.hidden?.utm_source || null,
-            utm_medium: form_response.hidden?.utm_medium || null,
             ...(spam.isSpam ? { spam_reasons: spam.reasons, spam_score: spam.score } : {}),
           },
           created_at: form_response.submitted_at,
@@ -555,7 +577,7 @@ function detectSpam(
   if (CONS4.test(n)) { score += 2; reasons.push('keyboard mash in name'); }
 
   // Name has a part ≥ 2 chars with zero vowels (e.g. "ds", "hhh", "sfsdfs")
-  const hasAllConsonantPart = n.split(/\s+/).some(p => p.length >= 2 && !VOWELS.test(p));
+  const hasAllConsonantPart = n.split(/\s+/).some(p => p.length >= 4 && !/\d/.test(p) && !VOWELS.test(p));
   if (hasAllConsonantPart) { score += 2; reasons.push('consonant-only word in name'); }
 
   // All name parts are single letters ("G G", "H H")
@@ -571,15 +593,21 @@ function detectSpam(
   if (n.length === 1) { score += 3; reasons.push('single letter as name'); }
 
   // Keyboard mash in email local part (3+ consecutive consonants) – skipped for trusted providers
-  if (/[bcdfghjklmnpqrstvwxyz]{3,}/i.test(local) && !TRUSTED_EMAIL_DOMAINS.includes(domain)) { score += 1; reasons.push('keyboard mash in email'); }
+  if (/[bcdfghjklmnpqrstvwxyz]{5,}/i.test(local) && !TRUSTED_EMAIL_DOMAINS.includes(domain)) { score += 1; reasons.push('keyboard mash in email'); }
 
   // Keyboard mash in survey answers (4+ consecutive consonants)
   if (CONS4.test(answers)) { score += 1; reasons.push('keyboard mash in answers'); }
 
-  // Any individual answer that contains zero vowels (e.g. "Ff", "ds", "byjyk")
-  const anyAnswerNoVowels = Object.values(surveyAnswers).some(v =>
-    typeof v === 'string' && v.trim().length >= 2 && !VOWELS.test(v)
-  );
+  // Any individual answer that contains zero vowels (e.g. "Ff", "ds", "byjyk") — skip phone-like values
+  const PHONE_LIKE = /^[+\d\s\-().\/]{4,}$/;
+  const anyAnswerNoVowels = Object.values(surveyAnswers).some(v => {
+    if (typeof v !== 'string') return false;
+    const trimmed = v.trim();
+    if (trimmed.length < 2) return false;
+    if (PHONE_LIKE.test(trimmed)) return false;
+    if ((trimmed.match(/[a-zA-ZäöüÄÖÜ]/g) || []).length < 2) return false; // skip values with no/few letters (times, dates, numbers)
+    return !VOWELS.test(trimmed);
+  });
   if (anyAnswerNoVowels) { score += 2; reasons.push('answer with no vowels'); }
 
   return { isSpam: score >= 3, score, reasons };

@@ -1397,6 +1397,16 @@ body:has(.app-sidebar.collapsed) .datapool-view {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
+.datapool-tab-disabled,
+.datapool-tab-disabled:hover {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+  background: #f6f6f6 !important;
+  color: #999 !important;
+  border-color: #ccc !important;
+}
+
 .datapool-filters {
   background: white;
   padding: 12px;
@@ -1851,6 +1861,28 @@ body:has(.app-sidebar.collapsed) .datapool-view {
   font-size: 14px;
 }
 
+.closing-call-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 8px;
+}
+
+.closing-call-scheduled {
+  font-weight: 600;
+  color: #1a73e8;
+}
+
+.timeline-item-ad-click {
+  opacity: 0.7;
+  border-style: dashed !important;
+}
+
+.timeline-ad-name {
+  color: #1877f2;
+  font-style: italic;
+}
+
 /* ============================================
    FACEBOOK TRAFFIC TRACKING TABLE
    ============================================ */
@@ -2160,15 +2192,20 @@ body:has(.app-sidebar.collapsed) .datapool-view {
 
 .preview-table-inner {
   width: 100%;
+  min-width: 0 !important;
   border-collapse: collapse;
   font-size: 13px;
+  table-layout: auto;
 }
 
 .preview-table-inner th,
 .preview-table-inner td {
-  padding: 8px 12px;
+  padding: 5px 8px;
   text-align: left;
   border-bottom: 1px solid #ecf0f1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .preview-table-inner th {

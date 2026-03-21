@@ -118,6 +118,8 @@
   position: relative;
   z-index: 1;
   pointer-events: auto;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .modal-content h2 {

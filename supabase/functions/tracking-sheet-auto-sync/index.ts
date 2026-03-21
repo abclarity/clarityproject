@@ -266,7 +266,22 @@ serve(async (req) => {
       }
     }
 
-    // Step 7: Return summary
+    // Step 7: Sync Calendly events to tracking sheets for all users
+    console.log('\n📅 Syncing Calendly events to tracking sheets...');
+    const { data: allUsers } = await supabase
+      .from('user_preferences')
+      .select('user_id');
+
+    for (const u of allUsers || []) {
+      try {
+        const rowsSaved = await syncCalendlyEventsToTrackingSheet(supabase, u.user_id, 90);
+        if (rowsSaved > 0) console.log(`  ✅ User ${u.user_id}: ${rowsSaved} rows synced`);
+      } catch (err) {
+        console.error(`  ❌ Calendly sync failed for user ${u.user_id}:`, err);
+      }
+    }
+
+    // Step 8: Return summary
     const summary = {
       success: true,
       timestamp: new Date().toISOString(),
@@ -286,8 +301,8 @@ serve(async (req) => {
   } catch (error) {
     console.error('❌ Auto-sync job failed:', error);
     return new Response(
-      JSON.stringify({ 
-        success: false, 
+      JSON.stringify({
+        success: false,
         error: error.message,
         timestamp: new Date().toISOString()
       }),
@@ -298,3 +313,60 @@ serve(async (req) => {
     );
   }
 });
+
+// ── syncCalendlyEventsToTrackingSheet ─────────────────────────────────────────
+async function syncCalendlyEventsToTrackingSheet(supabase: any, userId: string, daysBack = 90): Promise<number> {
+  const EVENT_FIELD_MAP: Record<string, string> = {
+    settingBooking: 'SettingBooking',
+    settingTermin: 'SettingTermin',
+    settingCall: 'SettingCall',
+    closingBooking: 'ClosingBooking',
+    closingTermin: 'ClosingTermin',
+    closingCall: 'ClosingCall',
+  };
+
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - daysBack);
+
+  const { data: events, error } = await supabase
+    .from('events')
+    .select('event_type, event_date, funnel_id, metadata, lead_id')
+    .in('event_type', Object.keys(EVENT_FIELD_MAP))
+    .eq('user_id', userId)
+    .eq('is_spam', false)
+    .not('funnel_id', 'is', null)
+    .gte('event_date', startDate.toISOString().split('T')[0]);
+
+  if (error) throw new Error(`Failed to fetch events: ${error.message}`);
+
+  const aggregation = new Map<string, { funnel_id: string; year: number; month: number; day: number; field_name: string; leads: Set<string> }>();
+
+  for (const ev of events || []) {
+    const fieldName = EVENT_FIELD_MAP[ev.event_type];
+    if (!fieldName || !ev.funnel_id) continue;
+    if (ev.metadata?.is_rebooking) continue;
+
+    const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ev.event_date));
+    const [yearStr, monthStr, dayStr] = localDate.split('-');
+    const year = parseInt(yearStr), month = parseInt(monthStr) - 1, day = parseInt(dayStr);
+    const key = `${ev.funnel_id}|${year}|${month}|${day}|${fieldName}`;
+    if (!aggregation.has(key)) {
+      aggregation.set(key, { funnel_id: ev.funnel_id, year, month, day, field_name: fieldName, leads: new Set<string>() });
+    }
+    const leadKey = ev.lead_id || `no-lead-${ev.funnel_id}-${year}-${month}-${day}`;
+    aggregation.get(key)!.leads.add(leadKey);
+  }
+
+  if (aggregation.size === 0) return 0;
+
+  const rows = Array.from(aggregation.values()).map(({ funnel_id, year, month, day, field_name, leads }) => ({
+    user_id: userId, funnel_id, year, month, day, field_name, value: leads.size, updated_at: new Date().toISOString(),
+  }));
+
+  const { error: upsertError } = await supabase
+    .from('tracking_sheet_data')
+    .upsert(rows, { onConflict: 'user_id,funnel_id,year,month,day,field_name', ignoreDuplicates: false });
+
+  if (upsertError) throw new Error(`Failed to save to tracking_sheet_data: ${upsertError.message}`);
+  return rows.length;
+}

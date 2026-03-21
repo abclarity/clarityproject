@@ -132,8 +132,7 @@ Deno.serve(async (req) => {
         events: ['invitee.created', 'invitee.canceled'],
         organization: orgUri,
         user: userUri,
-        scope: 'user',
-        signing_key: Deno.env.get('CALENDLY_WEBHOOK_SIGNING_KEY') || undefined,
+        scope: 'organization',
       }),
     });
 

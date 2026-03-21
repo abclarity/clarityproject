@@ -5,14 +5,18 @@
   'use strict';
 
   const FacebookTraffic = {
-    currentView: 'overview', // 'overview', 'campaigns', 'mappings'
+    currentView: 'overview', // 'overview', 'campaigns', 'adsets', 'ads'
     selectedAccount: null,
+    selectedCampaignId: null,
+    selectedCampaignName: null,
+    selectedAdsetId: null,
+    selectedAdsetName: null,
     campaigns: [],
     mappings: [],
     initialized: false,
-    dateRangeType: 'thisMonth', // 'last7days', 'last14days', 'last30days', 'thisMonth', 'lastMonth', 'custom'
-    customStartDate: null, // For custom date range
-    customEndDate: null, // For custom date range
+    dateRangeType: 'thisMonth',
+    customStartDate: null,
+    customEndDate: null,
 
     async init() {
       try {
@@ -126,11 +130,14 @@
       let container;
       if (this.currentView === 'campaigns') {
         container = document.getElementById('facebookTrafficCampaignsContainer');
-        if (!container) {
-          // Fallback to main container
-          container = document.getElementById('facebookTrafficContainer');
-        }
+      } else if (this.currentView === 'adsets') {
+        container = document.getElementById('facebookTrafficAdsetsContainer');
+      } else if (this.currentView === 'ads') {
+        container = document.getElementById('facebookTrafficAdsContainer');
       } else {
+        container = document.getElementById('facebookTrafficContainer');
+      }
+      if (!container) {
         container = document.getElementById('facebookTrafficContainer');
       }
       
@@ -145,6 +152,12 @@
         container.innerHTML = `<div class="facebook-traffic">${contentHtml}</div>`;
       } else if (this.currentView === 'campaigns') {
         const contentHtml = await this.renderCampaigns();
+        container.innerHTML = `<div class="facebook-traffic">${contentHtml}</div>`;
+      } else if (this.currentView === 'adsets') {
+        const contentHtml = await this.renderAdsets();
+        container.innerHTML = `<div class="facebook-traffic">${contentHtml}</div>`;
+      } else if (this.currentView === 'ads') {
+        const contentHtml = await this.renderAds();
         container.innerHTML = `<div class="facebook-traffic">${contentHtml}</div>`;
       }
     },
@@ -588,7 +601,7 @@
                     const cpc = c.clicks > 0 ? c.adspend / c.clicks : 0;
                     return `
                       <tr style="border-bottom: 1px solid #ecf0f1;">
-                        <td style="padding: 12px; font-size: 13px;">${c.campaign_name}</td>
+                        <td style="padding: 12px; font-size: 13px; cursor: pointer; color: #2980b9;" onclick="window.FacebookTraffic.drillToAdsets('${c.campaign_id}', '${c.campaign_name.replace(/'/g, "\\'")}')" title="Ad-Sets anzeigen">🔍 ${c.campaign_name}</td>
                         <td style="padding: 12px;">
                           <span style="display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; background: ${funnel?.color || '#ccc'}; color: white;">
                             ${funnel?.name || c.funnel_id}
@@ -611,8 +624,240 @@
       `;
     },
 
+    drillToAdsets(campaignId, campaignName) {
+      this.selectedCampaignId = campaignId;
+      this.selectedCampaignName = campaignName;
+      this.selectedAdsetId = null;
+      this.selectedAdsetName = null;
+      this.currentView = 'adsets';
+      document.querySelectorAll('.traffic-level-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.level === 'adsets');
+      });
+      // Show/hide content containers
+      const containers = { overview: 'trafficOverviewContent', campaigns: 'trafficCampaignsContent', adsets: 'trafficAdsetsContent', ads: 'trafficAdsContent' };
+      Object.entries(containers).forEach(([k, id]) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = k === 'adsets' ? 'block' : 'none';
+      });
+      if (window.DataPool) window.DataPool.currentTrafficLevel = 'adsets';
+      this.render();
+    },
+
+    drillToAds(adsetId, adsetName) {
+      this.selectedAdsetId = adsetId;
+      this.selectedAdsetName = adsetName;
+      this.currentView = 'ads';
+      document.querySelectorAll('.traffic-level-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.level === 'ads');
+      });
+      // Show/hide content containers
+      const containers = { overview: 'trafficOverviewContent', campaigns: 'trafficCampaignsContent', adsets: 'trafficAdsetsContent', ads: 'trafficAdsContent' };
+      Object.entries(containers).forEach(([k, id]) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = k === 'ads' ? 'block' : 'none';
+      });
+      if (window.DataPool) window.DataPool.currentTrafficLevel = 'ads';
+      this.render();
+    },
+
+    renderBreadcrumb() {
+      const parts = [
+        `<span style="cursor:pointer; color:#2980b9;" onclick="window.FacebookTraffic.switchView('campaigns'); window.FacebookTraffic.selectedCampaignId=null;">📈 Kampagnen</span>`
+      ];
+      if (this.selectedCampaignName) {
+        parts.push(`<span style="cursor:pointer; color:#2980b9;" onclick="window.FacebookTraffic.drillToAdsets('${this.selectedCampaignId}', '${this.selectedCampaignName.replace(/'/g, "\\'")}')">${this.selectedCampaignName}</span>`);
+      }
+      if (this.selectedAdsetName) {
+        parts.push(`<span style="color:#333;">${this.selectedAdsetName}</span>`);
+      }
+      return `<div style="font-size:13px; color:#7f8c8d; margin-bottom:16px; display:flex; gap:8px; align-items:center;">${parts.join(' › ')}</div>`;
+    },
+
+    async renderAdsets() {
+      const { startDate, endDate } = this.getDateRangeFromType();
+      const formatDateKey = (date) => {
+        return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+      };
+
+      let query = window.SupabaseClient
+        .from('traffic_metrics')
+        .select('*')
+        .eq('source', 'facebook-ads')
+        .eq('level', 'ad')
+        .gte('date', formatDateKey(startDate))
+        .lte('date', formatDateKey(endDate));
+
+      if (this.selectedCampaignId) {
+        query = query.eq('campaign_id', this.selectedCampaignId);
+      }
+
+      const { data: metrics, error } = await query;
+
+      if (error || !metrics || metrics.length === 0) {
+        return `${this.renderBreadcrumb()}<div class="empty-state"><p>Keine Ad-Set Daten für diesen Zeitraum. Bitte Facebook Sync ausführen.</p></div>`;
+      }
+
+      // Aggregate by ad_set_id
+      const adsetData = {};
+      metrics.forEach(m => {
+        const key = `${m.ad_set_id}_${m.date}`;
+        if (!adsetData[key]) {
+          adsetData[key] = { ad_set_id: m.ad_set_id, ad_set_name: m.ad_set_name, campaign_id: m.campaign_id, campaign_name: m.campaign_name, adspend: parseFloat(m.adspend||0), impressions: parseInt(m.impressions||0), reach: parseInt(m.reach||0), clicks: parseInt(m.clicks||0) };
+        } else {
+          adsetData[key].adspend = Math.max(adsetData[key].adspend, parseFloat(m.adspend||0));
+          adsetData[key].impressions = Math.max(adsetData[key].impressions, parseInt(m.impressions||0));
+          adsetData[key].reach = Math.max(adsetData[key].reach, parseInt(m.reach||0));
+          adsetData[key].clicks = Math.max(adsetData[key].clicks, parseInt(m.clicks||0));
+        }
+      });
+
+      const aggregated = {};
+      Object.values(adsetData).forEach(d => {
+        if (!aggregated[d.ad_set_id]) {
+          aggregated[d.ad_set_id] = { ...d, adspend: 0, impressions: 0, reach: 0, clicks: 0 };
+        }
+        aggregated[d.ad_set_id].adspend += d.adspend;
+        aggregated[d.ad_set_id].impressions += d.impressions;
+        aggregated[d.ad_set_id].reach += d.reach;
+        aggregated[d.ad_set_id].clicks += d.clicks;
+      });
+
+      const adsets = Object.values(aggregated).sort((a, b) => b.adspend - a.adspend);
+
+      return `
+        ${this.renderBreadcrumb()}
+        <table class="campaigns-table" style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+          <thead style="background:#f8f9fa;">
+            <tr>
+              <th style="padding:12px; text-align:left; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">Ad-Set</th>
+              <th style="padding:12px; text-align:right; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">Ad Spend</th>
+              <th style="padding:12px; text-align:right; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">Impressions</th>
+              <th style="padding:12px; text-align:right; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">Reach</th>
+              <th style="padding:12px; text-align:right; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">Clicks</th>
+              <th style="padding:12px; text-align:right; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">CTR</th>
+              <th style="padding:12px; text-align:right; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">CPC</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${adsets.map(a => {
+              const ctr = a.impressions > 0 ? (a.clicks / a.impressions * 100) : 0;
+              const cpc = a.clicks > 0 ? a.adspend / a.clicks : 0;
+              return `
+                <tr style="border-bottom:1px solid #ecf0f1;">
+                  <td style="padding:12px; font-size:13px; cursor:pointer; color:#2980b9;" onclick="window.FacebookTraffic.drillToAds('${a.ad_set_id}', '${(a.ad_set_name||'').replace(/'/g, "\\'")}')" title="Ads anzeigen">🔍 ${a.ad_set_name || a.ad_set_id}</td>
+                  <td style="padding:12px; text-align:right; font-size:13px;">${a.adspend.toLocaleString('de-DE', { style:'currency', currency:'EUR' })}</td>
+                  <td style="padding:12px; text-align:right; font-size:13px;">${a.impressions.toLocaleString('de-DE')}</td>
+                  <td style="padding:12px; text-align:right; font-size:13px;">${a.reach.toLocaleString('de-DE')}</td>
+                  <td style="padding:12px; text-align:right; font-size:13px;">${a.clicks.toLocaleString('de-DE')}</td>
+                  <td style="padding:12px; text-align:right; font-size:13px;">${ctr.toFixed(2)}%</td>
+                  <td style="padding:12px; text-align:right; font-size:13px;">${cpc.toLocaleString('de-DE', { style:'currency', currency:'EUR' })}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    },
+
+    async renderAds() {
+      const { startDate, endDate } = this.getDateRangeFromType();
+      const formatDateKey = (date) => {
+        return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+      };
+
+      let query = window.SupabaseClient
+        .from('traffic_metrics')
+        .select('*')
+        .eq('source', 'facebook-ads')
+        .eq('level', 'ad')
+        .gte('date', formatDateKey(startDate))
+        .lte('date', formatDateKey(endDate));
+
+      if (this.selectedAdsetId) {
+        query = query.eq('ad_set_id', this.selectedAdsetId);
+      } else if (this.selectedCampaignId) {
+        query = query.eq('campaign_id', this.selectedCampaignId);
+      }
+
+      const { data: metrics, error } = await query;
+
+      if (error || !metrics || metrics.length === 0) {
+        return `${this.renderBreadcrumb()}<div class="empty-state"><p>Keine Ad-Daten für diesen Zeitraum.</p></div>`;
+      }
+
+      // Aggregate by ad_id across dates
+      const adData = {};
+      metrics.forEach(m => {
+        const key = `${m.ad_id}_${m.date}`;
+        if (!adData[key]) {
+          adData[key] = { ad_id: m.ad_id, ad_name: m.ad_name, ad_set_id: m.ad_set_id, ad_set_name: m.ad_set_name, adspend: parseFloat(m.adspend||0), impressions: parseInt(m.impressions||0), reach: parseInt(m.reach||0), clicks: parseInt(m.clicks||0) };
+        } else {
+          adData[key].adspend = Math.max(adData[key].adspend, parseFloat(m.adspend||0));
+          adData[key].impressions = Math.max(adData[key].impressions, parseInt(m.impressions||0));
+          adData[key].reach = Math.max(adData[key].reach, parseInt(m.reach||0));
+          adData[key].clicks = Math.max(adData[key].clicks, parseInt(m.clicks||0));
+        }
+      });
+
+      const aggregated = {};
+      Object.values(adData).forEach(d => {
+        if (!aggregated[d.ad_id]) {
+          aggregated[d.ad_id] = { ...d, adspend: 0, impressions: 0, reach: 0, clicks: 0 };
+        }
+        aggregated[d.ad_id].adspend += d.adspend;
+        aggregated[d.ad_id].impressions += d.impressions;
+        aggregated[d.ad_id].reach += d.reach;
+        aggregated[d.ad_id].clicks += d.clicks;
+      });
+
+      const ads = Object.values(aggregated).sort((a, b) => b.adspend - a.adspend);
+
+      return `
+        ${this.renderBreadcrumb()}
+        <table class="campaigns-table" style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+          <thead style="background:#f8f9fa;">
+            <tr>
+              <th style="padding:12px; text-align:left; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">Ad</th>
+              <th style="padding:12px; text-align:right; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">Ad Spend</th>
+              <th style="padding:12px; text-align:right; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">Impressions</th>
+              <th style="padding:12px; text-align:right; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">Reach</th>
+              <th style="padding:12px; text-align:right; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">Clicks</th>
+              <th style="padding:12px; text-align:right; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">CTR</th>
+              <th style="padding:12px; text-align:right; font-size:11px; text-transform:uppercase; color:#7f8c8d; border-bottom:2px solid #ecf0f1;">CPC</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ads.map(a => {
+              const ctr = a.impressions > 0 ? (a.clicks / a.impressions * 100) : 0;
+              const cpc = a.clicks > 0 ? a.adspend / a.clicks : 0;
+              return `
+                <tr style="border-bottom:1px solid #ecf0f1;">
+                  <td style="padding:12px; font-size:13px;">${a.ad_name || a.ad_id}</td>
+                  <td style="padding:12px; text-align:right; font-size:13px;">${a.adspend.toLocaleString('de-DE', { style:'currency', currency:'EUR' })}</td>
+                  <td style="padding:12px; text-align:right; font-size:13px;">${a.impressions.toLocaleString('de-DE')}</td>
+                  <td style="padding:12px; text-align:right; font-size:13px;">${a.reach.toLocaleString('de-DE')}</td>
+                  <td style="padding:12px; text-align:right; font-size:13px;">${a.clicks.toLocaleString('de-DE')}</td>
+                  <td style="padding:12px; text-align:right; font-size:13px;">${ctr.toFixed(2)}%</td>
+                  <td style="padding:12px; text-align:right; font-size:13px;">${cpc.toLocaleString('de-DE', { style:'currency', currency:'EUR' })}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    },
+
     async switchView(view) {
       this.currentView = view;
+      document.querySelectorAll('.traffic-level-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.level === view);
+      });
+      const containerMap = { overview: 'trafficOverviewContent', campaigns: 'trafficCampaignsContent', adsets: 'trafficAdsetsContent', ads: 'trafficAdsContent' };
+      Object.entries(containerMap).forEach(([k, id]) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = k === view ? 'block' : 'none';
+      });
+      if (window.DataPool) window.DataPool.currentTrafficLevel = view;
       await this.render();
     },
 

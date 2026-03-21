@@ -338,8 +338,10 @@
         return `
           <div style="display:flex; align-items:center; gap:1rem; padding:0.75rem; border:1px solid #e5e7eb; border-radius:6px; margin-bottom:0.5rem;">
             <div style="flex:1; min-width:0;">
-              <strong style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${utm.utm_campaign}</strong>
-              ${utm.utm_source ? `<small style="color:var(--gray-600);">Quelle: ${utm.utm_source}</small>` : ''}
+              <strong style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                ${utm.utm_source || utm.utm_campaign}
+              </strong>
+              <small style="color:var(--gray-500); font-family:monospace;">${utm.utm_campaign}</small>
               ${utm.count ? `<small style="color:var(--gray-500);"> · ${utm.count}× gebucht</small>` : ''}
             </div>
             <select data-campaign="${utm.utm_campaign.replace(/"/g, '&quot;')}" data-source="${(utm.utm_source || '').replace(/"/g, '&quot;')}" style="width:200px; padding:0.4rem 0.6rem; border:1px solid #d1d5db; border-radius:4px;">
@@ -356,15 +358,14 @@
       modal.style.display = 'flex';
 
       modal.innerHTML = `
-        <div class="modal-content" style="max-width: 640px;">
-          <div class="modal-header">
+        <div class="modal-content" style="max-width: 640px; width: 100%; max-height: 85vh; display: flex; flex-direction: column; padding: 0; overflow: hidden;">
+          <div class="modal-header" style="flex-shrink: 0; padding: 20px 28px 16px;">
             <h2>🔗 UTM → Funnel Zuordnung</h2>
             <button class="modal-close" onclick="document.getElementById('calendly-utm-modal').remove()">&times;</button>
           </div>
-          <div class="modal-body">
+          <div class="modal-body" style="overflow-y: auto; flex: 1; min-height: 0; padding: 0 28px 16px;">
             <p style="color:var(--gray-600); margin-bottom:1.5rem;">
-              Ordne jeden <code>utm_campaign</code>-Wert dem passenden Clarity-Funnel zu.<br>
-              Die Werte kommen aus deinen letzten 50 Buchungen.
+              Ordne jeden <code>utm_campaign</code>-Wert dem passenden Clarity-Funnel zu.
             </p>
             <div id="utm-rows">
               ${allUtms.length > 0 ? rows : `
@@ -375,7 +376,7 @@
               `}
             </div>
           </div>
-          <div class="modal-footer" style="display:flex; gap:0.5rem; justify-content:flex-end;">
+          <div class="modal-footer" style="display:flex; gap:0.5rem; justify-content:flex-end; flex-shrink: 0; padding: 12px 28px 20px; border-top: 1px solid #e5e7eb;">
             <button class="btn btn-secondary" onclick="document.getElementById('calendly-utm-modal').remove()">Abbrechen</button>
             <button class="btn btn-primary" onclick="window.CalendlyAPI.saveUtmMappings()">✓ Speichern</button>
           </div>
@@ -513,12 +514,18 @@
           </div>
 
           <!-- Configuration Buttons -->
-          <div style="display:flex; gap:1rem; margin-bottom:2rem;">
+          <div style="display:flex; gap:1rem; margin-bottom:2rem; flex-wrap:wrap;">
             <button class="btn btn-primary" onclick="window.CalendlyAPI.openEventTypeMappingModal()">
               ⚙️ Event-Typen zuordnen
             </button>
             <button class="btn btn-secondary" onclick="window.CalendlyAPI.openUtmMappingModal()">
               🔗 UTM → Funnel zuordnen
+            </button>
+            <button class="btn btn-secondary" onclick="window.CalendlyAPI.importPastBookings()">
+              ⬇️ Vergangene Bookings importieren
+            </button>
+            <button class="btn btn-secondary" onclick="window.CalendlyAPI.manualSyncToTracking()">
+              📊 Sync zu Tracking Sheets
             </button>
           </div>
 
@@ -529,16 +536,314 @@
           </div>
 
           <!-- UTM Mappings -->
-          <div>
+          <div style="margin-bottom:1.5rem;">
             <h4 style="margin-bottom:0.75rem;">UTM-Mappings (utm_campaign → Funnel)</h4>
             ${utmList}
           </div>
+
+          <!-- Webhook Status -->
+          <div style="padding:1rem; background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+              <h4 style="margin:0;">🔔 Live Webhook</h4>
+              <button class="btn btn-secondary btn-sm" onclick="window.CalendlyAPI.loadWebhookStatus()">↻ Status prüfen</button>
+            </div>
+            <div id="webhookStatusArea" style="font-size:0.9rem; color:var(--gray-600);">Lädt...</div>
+          </div>
         </div>
       `;
+
+      // Load webhook status after rendering
+      setTimeout(() => this.loadWebhookStatus(), 0);
+    },
+
+    // ==================== WEBHOOK MANAGEMENT ====================
+    async loadWebhookStatus() {
+      const area = document.getElementById('webhookStatusArea');
+      if (!area) return;
+      area.innerHTML = 'Prüfe Webhook-Status...';
+
+      try {
+        const session = await window.SupabaseClient.auth.getSession();
+        const token = session?.data?.session?.access_token;
+        const res = await fetch(`${window.SupabaseClient.supabaseUrl}/functions/v1/calendly-sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ action: 'list_webhooks' }),
+        });
+        const data = await res.json();
+        const webhooks = data.webhooks || [];
+        // Match any webhook pointing to our calendly-webhook function
+        const ours = webhooks.find(w =>
+          (w.callback_url || w.url || '').includes('calendly-webhook')
+        );
+        const active = ours && ours.state === 'active' ? ours : null;
+        const disabled = ours && ours.state !== 'active' ? ours : null;
+
+        if (active) {
+          const url = active.callback_url || active.url || '';
+          area.innerHTML = `
+            <div style="color:#16a34a; margin-bottom:0.5rem;">✓ Aktiv – neue Buchungen werden automatisch übertragen</div>
+            <div style="font-size:0.8rem; color:var(--gray-500);">URL: ${url}</div>
+            <button class="btn btn-danger-outline btn-sm" style="margin-top:0.5rem;" onclick="window.CalendlyAPI.deleteWebhook('${active.uri}')">Webhook entfernen</button>
+          `;
+        } else if (disabled) {
+          area.innerHTML = `
+            <div style="color:#d97706; margin-bottom:0.5rem;">⚠ Webhook deaktiviert – Calendly hat den Webhook nach Lieferungsfehlern pausiert</div>
+            <div style="font-size:0.8rem; color:var(--gray-500); margin-bottom:0.75rem;">Zuletzt aktualisiert: ${new Date(disabled.updated_at).toLocaleDateString('de-DE')}</div>
+            <button class="btn btn-primary btn-sm" onclick="window.CalendlyAPI.registerWebhook()">🔄 Webhook neu aktivieren</button>
+          `;
+        } else {
+          area.innerHTML = `
+            <div style="color:#dc2626; margin-bottom:0.75rem;">✗ Kein aktiver Webhook – neue Buchungen werden NICHT automatisch übertragen</div>
+            <button class="btn btn-primary btn-sm" onclick="window.CalendlyAPI.registerWebhook()">🔔 Webhook jetzt registrieren</button>
+          `;
+        }
+      } catch (err) {
+        area.innerHTML = '<span style="color:#dc2626;">Fehler beim Laden des Webhook-Status</span>';
+        console.error('❌ loadWebhookStatus:', err);
+      }
+    },
+
+    async registerWebhook() {
+      const area = document.getElementById('webhookStatusArea');
+      if (area) area.innerHTML = 'Registriere Webhook...';
+
+      try {
+        const session = await window.SupabaseClient.auth.getSession();
+        const token = session?.data?.session?.access_token;
+        const res = await fetch(`${window.SupabaseClient.supabaseUrl}/functions/v1/calendly-sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ action: 'register_webhook' }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          window.Toast?.success(data.already_exists ? 'Webhook war bereits registriert' : 'Webhook erfolgreich registriert');
+        } else {
+          window.Toast?.error(`Fehler: ${data.error || 'Unbekannt'}`);
+        }
+        await this.loadWebhookStatus();
+      } catch (err) {
+        console.error('❌ registerWebhook:', err);
+        window.Toast?.error('Fehler beim Registrieren des Webhooks');
+        await this.loadWebhookStatus();
+      }
+    },
+
+    async deleteWebhook(webhookUri) {
+      if (!confirm('Webhook wirklich entfernen? Neue Buchungen werden dann nicht mehr automatisch übertragen.')) return;
+
+      try {
+        const session = await window.SupabaseClient.auth.getSession();
+        const token = session?.data?.session?.access_token;
+        await fetch(`${window.SupabaseClient.supabaseUrl}/functions/v1/calendly-sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ action: 'delete_webhook', webhook_uri: webhookUri }),
+        });
+        window.Toast?.success('Webhook entfernt');
+        await this.loadWebhookStatus();
+      } catch (err) {
+        console.error('❌ deleteWebhook:', err);
+        window.Toast?.error('Fehler beim Entfernen des Webhooks');
+      }
+    },
+
+    // ==================== IMPORT PAST BOOKINGS ====================
+    async importPastBookings() {
+      const existing = document.getElementById('calendly-import-modal');
+      if (existing) existing.remove();
+
+      const modal = document.createElement('div');
+      modal.id = 'calendly-import-modal';
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal-container" style="max-width:420px;">
+          <div class="modal-header">
+            <h2>Bookings importieren</h2>
+            <button class="modal-close" id="calendly-import-close" onclick="document.getElementById('calendly-import-modal').remove()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div id="calendly-import-picker">
+              <p style="color:var(--gray-600); margin-bottom:1.25rem; font-size:0.9rem;">
+                Wähle den Zeitraum für den Import. Bereits importierte Bookings werden automatisch übersprungen.
+              </p>
+              <div style="display:flex; flex-direction:column; gap:0.75rem;">
+                ${[
+                  { days: 30,  label: 'Letzte 30 Tage' },
+                  { days: 90,  label: 'Letzte 90 Tage' },
+                  { days: 180, label: 'Letzte 6 Monate' },
+                  { days: 365, label: 'Letztes Jahr' },
+                  { days: 730, label: 'Letzte 2 Jahre (alles)' },
+                ].map(opt => `
+                  <button class="btn btn-secondary" style="text-align:left; justify-content:flex-start;"
+                    onclick="window.CalendlyAPI._runImport(${opt.days})">
+                    ${opt.label}
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+
+            <div id="calendly-import-progress" style="display:none;">
+              <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem;">
+                <div style="width:22px; height:22px; border:3px solid var(--primary-color,#6366f1); border-top-color:transparent; border-radius:50%; animation:spin 0.8s linear infinite; flex-shrink:0;"></div>
+                <span id="calendly-import-status" style="font-weight:500;">Bookings werden importiert...</span>
+              </div>
+              <p style="color:var(--gray-500); font-size:0.85rem; margin:0;">
+                Das kann je nach Datenmenge 30–60 Sekunden dauern. Bitte warte kurz.
+              </p>
+            </div>
+
+            <div id="calendly-import-result" style="display:none;">
+              <div id="calendly-import-result-content"></div>
+              <button class="btn btn-primary" style="margin-top:1.25rem; width:100%;"
+                onclick="document.getElementById('calendly-import-modal').remove()">
+                Schließen
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    },
+
+    async _runImport(daysBack) {
+      // Switch modal to loading state
+      const picker = document.getElementById('calendly-import-picker');
+      const progress = document.getElementById('calendly-import-progress');
+      const closeBtn = document.getElementById('calendly-import-close');
+      if (picker) picker.style.display = 'none';
+      if (progress) progress.style.display = 'block';
+      if (closeBtn) closeBtn.style.display = 'none';
+
+      const labels = { 30: '30 Tagen', 90: '90 Tagen', 180: '6 Monaten', 365: '1 Jahr', 730: '2 Jahren' };
+      const statusEl = document.getElementById('calendly-import-status');
+      if (statusEl) statusEl.textContent = `Bookings der letzten ${labels[daysBack] || daysBack + ' Tagen'} werden importiert...`;
+
+      try {
+        const session = await window.SupabaseClient.auth.getSession();
+        const token = session?.data?.session?.access_token;
+        if (!token) throw new Error('Nicht eingeloggt');
+
+        let totalImported = 0;
+        let totalSkipped = 0;
+        let totalErrors = 0;
+        let pageNum = 1;
+        let nextPageUrl = null;
+        let nextMappingIndex = 0;
+        let done = false;
+
+        while (!done) {
+          if (statusEl) {
+            const soFar = totalImported + totalSkipped;
+            statusEl.textContent = pageNum === 1
+              ? `Bookings der letzten ${labels[daysBack] || daysBack + ' Tagen'} werden importiert...`
+              : `Seite ${pageNum} wird verarbeitet... (bisher ${soFar} Bookings verarbeitet)`;
+          }
+
+          const body = { action: 'import_past_bookings', days_back: daysBack };
+          if (nextPageUrl) body.page_url = nextPageUrl;
+          if (nextMappingIndex) body.mapping_index = nextMappingIndex;
+
+          const res = await fetch(`${window.SupabaseClient.supabaseUrl}/functions/v1/calendly-sync`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+
+          const rawText = await res.text();
+          if (!rawText) throw new Error(`Leere Antwort vom Server (Status ${res.status})`);
+          let data;
+          try { data = JSON.parse(rawText); } catch { throw new Error(`Ungültige Antwort: ${rawText.slice(0, 200)}`); }
+          if (!res.ok) throw new Error(data.error || 'Import fehlgeschlagen');
+
+          if (data.debug) console.log(`📋 Calendly Import Debug (Seite ${pageNum}):\n` + data.debug.join('\n'));
+
+          totalImported += data.imported || 0;
+          totalSkipped += data.skipped || 0;
+          totalErrors += data.errors || 0;
+          done = data.done;
+          nextPageUrl = data.next_page_url || null;
+          nextMappingIndex = data.next_mapping_index || 0;
+          pageNum++;
+
+          // Safety: if not done but no next_page_url, something went wrong — stop
+          if (!done && !nextPageUrl && !nextMappingIndex) {
+            done = true;
+            if (data.error) totalErrors++;
+          }
+        }
+
+        // Show result in modal
+        if (progress) progress.style.display = 'none';
+        if (closeBtn) closeBtn.style.display = '';
+        const resultEl = document.getElementById('calendly-import-result');
+        const resultContent = document.getElementById('calendly-import-result-content');
+        if (resultEl) resultEl.style.display = 'block';
+        if (resultContent) resultContent.innerHTML = `
+          <div style="padding:1rem; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px;">
+            <div style="font-weight:600; margin-bottom:0.5rem;">✅ Import abgeschlossen</div>
+            <div style="font-size:0.9rem; color:var(--gray-700);">
+              <div>📥 <strong>${totalImported}</strong> neue Bookings importiert</div>
+              <div>⏭ <strong>${totalSkipped}</strong> bereits vorhanden (übersprungen)</div>
+              ${totalErrors > 0 ? `<div style="color:#ef4444;">⚠️ <strong>${totalErrors}</strong> Fehler</div>` : ''}
+            </div>
+          </div>
+          ${totalImported > 0 ? `
+          <div style="margin-top:1rem; padding:0.75rem 1rem; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
+            <div style="font-size:0.875rem; color:#1e40af; margin-bottom:0.5rem;">
+              💡 UTM-Parameter wurden mitgeladen. Ordne sie jetzt den richtigen Funnels zu:
+            </div>
+            <button class="btn btn-secondary" style="width:100%;" id="calendly-post-import-utm-btn">
+              UTM-Mappings konfigurieren →
+            </button>
+          </div>` : ''}
+        `;
+
+        // Wire up the post-import UTM button
+        const utmBtn = document.getElementById('calendly-post-import-utm-btn');
+        if (utmBtn) {
+          utmBtn.addEventListener('click', () => {
+            document.getElementById('calendly-import-modal')?.remove();
+            this.openUtmMappingModal();
+          });
+        }
+
+        await this.checkConnectionStatus();
+        this.renderConnectionUI();
+      } catch (err) {
+        console.error('❌ Calendly import fehlgeschlagen:', err);
+        if (progress) progress.style.display = 'none';
+        if (closeBtn) closeBtn.style.display = '';
+        const resultEl = document.getElementById('calendly-import-result');
+        const resultContent = document.getElementById('calendly-import-result-content');
+        if (resultEl) resultEl.style.display = 'block';
+        if (resultContent) resultContent.innerHTML = `
+          <div style="padding:1rem; background:#fef2f2; border:1px solid #fecaca; border-radius:8px;">
+            <div style="font-weight:600; color:#ef4444; margin-bottom:0.25rem;">❌ Import fehlgeschlagen</div>
+            <div style="font-size:0.85rem; color:var(--gray-600);">${err.message}</div>
+          </div>
+        `;
+      }
     },
 
     // ==================== TRACKING SHEET SYNC ====================
-    // Aggregates settingBooking/closingBooking events into tracking sheets
+
+    async manualSyncToTracking() {
+      try {
+        window.Loading.show('Synchronisiere Calendly-Buchungen zu Tracking Sheets...');
+        await this.syncCalendlyToTrackingSheets(90);
+        window.Loading.hide();
+        window.Toast.success('Calendly-Buchungen erfolgreich zu Tracking Sheets synchronisiert!');
+        if (window.MonthView?.render) window.MonthView.render();
+      } catch (err) {
+        window.Loading.hide();
+        console.error('❌ Manual Calendly tracking sync error:', err);
+        window.Toast.error('Sync zu Tracking Sheets fehlgeschlagen.');
+      }
+    },
+
+    // Aggregates booking events into tracking sheets (all sources, not just calendly)
     async syncCalendlyToTrackingSheets(daysBack = 60) {
       try {
         const startDate = new Date();
@@ -547,17 +852,22 @@
         const { data: events, error } = await window.SupabaseClient
           .from('events')
           .select('funnel_id, event_date, event_type, lead_id')
-          .in('event_type', ['settingBooking', 'closingBooking'])
-          .eq('event_source', 'calendly')
+          .in('event_type', ['settingBooking', 'settingTermin', 'settingCall', 'closingBooking', 'closingTermin', 'closingCall'])
           .not('funnel_id', 'is', null)
           .or('is_spam.is.null,is_spam.eq.false')
           .gte('event_date', startDate.toISOString().split('T')[0]);
 
         if (error || !events || events.length === 0) return;
 
+        const toGermanDateKey = (dateStr) => {
+          const d = new Date(dateStr);
+          return d.toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' }); // "YYYY-MM-DD" in German local time
+        };
+
         const agg = {};
         events.forEach(ev => {
-          const dateKey = String(ev.event_date).substring(0, 10);
+          if (!ev.funnel_id) return;
+          const dateKey = toGermanDateKey(ev.event_date);
           const key = `${ev.funnel_id}__${dateKey}__${ev.event_type}`;
           if (!agg[key]) agg[key] = { funnelId: ev.funnel_id, date: dateKey, eventType: ev.event_type, leads: new Set() };
           if (ev.lead_id) agg[key].leads.add(ev.lead_id);
@@ -566,7 +876,11 @@
         // Map event types to tracking sheet field names
         const fieldNameMap = {
           settingBooking: 'SettingBooking',
+          settingTermin: 'SettingTermin',
+          settingCall: 'SettingCall',
           closingBooking: 'ClosingBooking',
+          closingTermin: 'ClosingTermin',
+          closingCall: 'ClosingCall',
         };
 
         const batchRecords = [];
