@@ -45,21 +45,38 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Idempotency check – claim this invitee_uri atomically
-    const { data: logClaim, error: logClaimError } = await supabase
-      .from('calendly_events_log')
-      .insert({ invitee_uri: inviteeUri, calendly_event_uri: calendlyEventUri, raw_payload: payload })
-      .select('id')
-      .single();
+    // ── Idempotency ────────────────────────────────────────────────────────────
+    // For cancellations: the invitee_uri was already inserted at booking time.
+    // We skip the insert and just look up the existing log entry.
+    let logEntryId: string | null = null;
 
-    if (logClaimError) {
-      if (logClaimError.code === '23505') {
-        console.log('Already processed (duplicate webhook):', inviteeUri);
-        return jsonResponse({ message: 'Already processed' });
+    if (!isCanceled) {
+      const { data: logClaim, error: logClaimError } = await supabase
+        .from('calendly_events_log')
+        .insert({ invitee_uri: inviteeUri, calendly_event_uri: calendlyEventUri, raw_payload: payload })
+        .select('id')
+        .single();
+
+      if (logClaimError) {
+        if (logClaimError.code === '23505') {
+          console.log('Already processed (duplicate webhook):', inviteeUri);
+          return jsonResponse({ message: 'Already processed' });
+        }
+        throw logClaimError;
       }
-      throw logClaimError;
+      logEntryId = logClaim.id;
+    } else {
+      // For cancellations: look up existing log entry (don't insert)
+      const { data: existingLog } = await supabase
+        .from('calendly_events_log')
+        .select('id, event_id, user_id')
+        .eq('invitee_uri', inviteeUri)
+        .maybeSingle();
+      if (existingLog) {
+        logEntryId = existingLog.id;
+      }
     }
-    const logEntryId = logClaim.id;
+
     const { data: connection } = await supabase
       .from('calendly_connections')
       .select('user_id, access_token')
@@ -83,6 +100,7 @@ Deno.serve(async (req) => {
 
     const userId: string = eventTypeMapping.user_id;
     const clarityEventType: string = eventTypeMapping.clarity_event_type;
+    const callType: string = clarityEventType === 'settingBooking' ? 'setting' : 'closing';
 
     // Determine funnel from UTM mapping
     const utmCampaign: string | null = tracking?.utm_campaign || null;
@@ -110,6 +128,14 @@ Deno.serve(async (req) => {
     const callScheduledTime: string = p.scheduled_event?.start_time;
     const bookingCreatedAt: string = p.created_at || callScheduledTime;
 
+    // Derive dates
+    const bookingDate: string | null = bookingCreatedAt
+      ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(bookingCreatedAt))
+      : null;
+    const appointmentDate: string | null = callScheduledTime
+      ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(callScheduledTime))
+      : null;
+
     // Build Q&A metadata
     const bookingAnswers: Record<string, string> = {};
     if (Array.isArray(questions_and_answers)) {
@@ -118,6 +144,69 @@ Deno.serve(async (req) => {
           bookingAnswers[qa.question] = qa.answer;
         }
       }
+    }
+
+    // ── Handle Cancellation ───────────────────────────────────────────────────
+    if (isCanceled) {
+      console.log('Processing cancellation for invitee:', inviteeUri);
+
+      // Update events table (mark metadata.canceled = true)
+      if (logEntryId) {
+        const { data: existingLog } = await supabase
+          .from('calendly_events_log')
+          .select('event_id')
+          .eq('id', logEntryId)
+          .maybeSingle();
+
+        if (existingLog?.event_id) {
+          // Fetch existing metadata first to merge (avoid overwriting)
+          const { data: existingEvent } = await supabase
+            .from('events')
+            .select('metadata')
+            .eq('id', existingLog.event_id)
+            .maybeSingle();
+
+          await supabase
+            .from('events')
+            .update({
+              metadata: {
+                ...(existingEvent?.metadata || {}),
+                canceled: true,
+                canceled_at: new Date().toISOString(),
+              },
+            })
+            .eq('id', existingLog.event_id);
+        }
+      }
+
+      // Update call_events: set status = 'canceled'
+      const { error: callEventCancelError } = await supabase
+        .from('call_events')
+        .update({
+          status: 'canceled',
+          canceled_at: new Date().toISOString(),
+        })
+        .eq('user_id', userId)
+        .eq('calendly_invitee_uri', inviteeUri)
+        .eq('status', 'scheduled'); // Only cancel if still scheduled (not already showed/no_show/etc.)
+
+      if (callEventCancelError) {
+        console.error('❌ Failed to cancel call_event (non-fatal):', callEventCancelError);
+      } else {
+        console.log('✅ call_event canceled for invitee:', inviteeUri);
+
+        // Sync call_events → tracking_sheet after cancellation
+        if (userId && funnelId) {
+          try {
+            const rowsSaved = await syncCallEventsToTrackingSheet(supabase, userId, 60);
+            console.log(`✅ Tracking sheet sync after cancel: ${rowsSaved} rows updated`);
+          } catch (syncErr) {
+            console.error('❌ Tracking sheet sync failed (non-fatal):', syncErr);
+          }
+        }
+      }
+
+      return jsonResponse({ success: true, action: 'canceled', invitee_uri: inviteeUri });
     }
 
     // ── Lead Matching ─────────────────────────────────────────────────────────
@@ -179,17 +268,8 @@ Deno.serve(async (req) => {
       console.log(`🚫 Spam detected (score ${spam.score}): ${spam.reasons.join(', ')} — ${email}`);
     }
 
-    if (leadId && !isCanceled) {
+    if (leadId) {
       // Update existing lead with booking info
-      await supabase
-        .from('leads')
-        .update({
-          updated_at: new Date().toISOString(),
-          metadata: supabase.rpc ? undefined : undefined, // handled below via raw update
-        })
-        .eq('id', leadId);
-
-      // Merge booking answers into metadata
       const { data: existingLead } = await supabase
         .from('leads')
         .select('metadata')
@@ -211,7 +291,7 @@ Deno.serve(async (req) => {
         })
         .eq('id', leadId);
 
-    } else if (!leadId && !isCanceled) {
+    } else {
       // Create new lead (booking-only, no survey data yet)
       const { data: newLead, error: leadError } = await supabase
         .from('leads')
@@ -248,88 +328,98 @@ Deno.serve(async (req) => {
       console.log('Created new lead from Calendly booking:', leadId);
     }
 
-    // ── Create Event ──────────────────────────────────────────────────────────
+    // ── Create Event (existing events table — tracks Booking count) ───────────
     let eventId: string | null = null;
 
-    if (!isCanceled && leadId) {
-      // Check if this is a rebooking (lead already has an event of this type)
-      const { data: existingEvent } = await supabase.from('events')
-        .select('id').eq('user_id', userId).eq('lead_id', leadId)
-        .eq('event_type', clarityEventType).eq('event_source', 'calendly')
-        .maybeSingle();
-      const isRebooking = !!existingEvent;
+    // Check if this is a rebooking (lead already has an event of this type)
+    const { data: existingEvent } = await supabase.from('events')
+      .select('id').eq('user_id', userId).eq('lead_id', leadId)
+      .eq('event_type', clarityEventType).eq('event_source', 'calendly')
+      .maybeSingle();
+    const isRebooking = !!existingEvent;
 
-      const { data: event, error: eventError } = await supabase
-        .from('events')
-        .insert({
-          user_id: userId,
-          lead_id: leadId,
-          event_type: clarityEventType,
-          event_date: bookingCreatedAt,
-          funnel_id: funnelId,
-          event_source: 'calendly',
-          is_spam: spam.isSpam,
-          metadata: {
-            calendly_invitee_uri: inviteeUri,
-            calendly_event_uri: calendlyEventUri,
-            calendly_event_type_name: p.scheduled_event?.name || eventTypeUri,
-            call_scheduled_time: callScheduledTime, booking_created_at: bookingCreatedAt,
-            invitee_name: fullName,
-            invitee_email: email,
-            utm_campaign: utmCampaign,
-            utm_source: utmSource,
-            booking_answers: bookingAnswers,
-            lead_match_type: matchType,
-            is_rebooking: isRebooking,
-            ...(spam.isSpam ? { spam_reasons: spam.reasons, spam_score: spam.score } : {}),
-          },
-        })
-        .select()
-        .single();
+    const { data: event, error: eventError } = await supabase
+      .from('events')
+      .insert({
+        user_id: userId,
+        lead_id: leadId,
+        event_type: clarityEventType,
+        event_date: bookingCreatedAt,
+        funnel_id: funnelId,
+        event_source: 'calendly',
+        is_spam: spam.isSpam,
+        metadata: {
+          calendly_invitee_uri: inviteeUri,
+          calendly_event_uri: calendlyEventUri,
+          calendly_event_type_name: p.scheduled_event?.name || eventTypeUri,
+          call_scheduled_time: callScheduledTime,
+          booking_created_at: bookingCreatedAt,
+          invitee_name: fullName,
+          invitee_email: email,
+          utm_campaign: utmCampaign,
+          utm_source: utmSource,
+          booking_answers: bookingAnswers,
+          lead_match_type: matchType,
+          is_rebooking: isRebooking,
+          ...(spam.isSpam ? { spam_reasons: spam.reasons, spam_score: spam.score } : {}),
+        },
+      })
+      .select()
+      .single();
 
-      if (eventError) throw eventError;
-      eventId = event.id;
-    }
+    if (eventError) throw eventError;
+    eventId = event.id;
 
-    // Handle cancellation: mark event as canceled if exists
-    if (isCanceled && inviteeUri) {
-      const { data: existingLog } = await supabase
-        .from('calendly_events_log')
-        .select('event_id')
-        .eq('invitee_uri', inviteeUri)
-        .not('id', 'eq', logEntryId)
-        .maybeSingle();
+    // ── Create call_event (new table — tracks Termin/Call lifecycle) ──────────
+    // Uses appointment_date (not booking_date) for Termin/Call tracking
+    const { error: callEventError } = await supabase
+      .from('call_events')
+      .insert({
+        user_id: userId,
+        lead_id: leadId,
+        lead_email: email,
+        funnel_id: funnelId,
+        call_type: callType,
+        booking_date: bookingDate,
+        appointment_date: appointmentDate,
+        status: 'scheduled',
+        calendly_event_uri: calendlyEventUri,
+        calendly_invitee_uri: inviteeUri,
+        source: 'calendly',
+      });
 
-      if (existingLog?.event_id) {
-        await supabase
-          .from('events')
-          .update({ metadata: { canceled: true, canceled_at: new Date().toISOString() } })
-          .eq('id', existingLog.event_id);
-      }
+    if (callEventError && callEventError.code !== '23505') {
+      // 23505 = duplicate (rebooking same invitee URI) — safe to ignore
+      console.error('❌ Failed to create call_event (non-fatal):', callEventError);
+    } else if (!callEventError) {
+      console.log('✅ call_event created:', callType, appointmentDate);
     }
 
     // Update log entry with full data
-    await supabase
-      .from('calendly_events_log')
-      .update({
-        user_id: userId,
-        invitee_email: email,
-        lead_id: leadId,
-        event_id: eventId,
-        event_type: clarityEventType,
-      })
-      .eq('id', logEntryId);
+    if (logEntryId) {
+      await supabase
+        .from('calendly_events_log')
+        .update({
+          user_id: userId,
+          invitee_email: email,
+          lead_id: leadId,
+          event_id: eventId,
+          event_type: clarityEventType,
+        })
+        .eq('id', logEntryId);
+    }
 
     console.log('✅ Calendly webhook processed');
     console.log('Lead ID:', leadId, '| Event ID:', eventId, '| Type:', clarityEventType);
 
-    // Sync updated counts to tracking sheets (non-fatal)
-    if (!isCanceled && !spam.isSpam && userId) {
+    // ── Sync to Tracking Sheets ────────────────────────────────────────────────
+    if (!spam.isSpam && userId) {
       try {
-        const rowsSaved = await syncCalendlyEventsToTrackingSheet(supabase, userId, 60);
-        console.log(`✅ Tracking sheet sync: ${rowsSaved} rows updated`);
+        // Sync Booking counts (existing logic — uses events table)
+        const bookingRowsSaved = await syncCalendlyEventsToTrackingSheet(supabase, userId, 60);
+        console.log(`✅ Booking tracking sheet sync: ${bookingRowsSaved} rows updated`);
       } catch (syncErr) {
-        console.error('❌ Tracking sheet sync failed (non-fatal):', syncErr);
+        console.error('❌ Booking tracking sheet sync failed (non-fatal):', syncErr);
       }
     }
 
@@ -347,7 +437,87 @@ Deno.serve(async (req) => {
   }
 });
 
+// ── syncCallEventsToTrackingSheet ──────────────────────────────────────────────
+// Aggregates call_events → tracking_sheet_data for Termin and Call fields
+// Uses appointment_date (not booking_date) — "what happened on that day?"
+// Termin = showed + no_show (appointment was valid at call time)
+// Call   = showed only (call actually happened)
+async function syncCallEventsToTrackingSheet(supabase: any, userId: string, daysBack = 90): Promise<number> {
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - daysBack);
+  const startDateStr = startDate.toISOString().split('T')[0];
+
+  const { data: callEvents, error } = await supabase
+    .from('call_events')
+    .select('id, call_type, appointment_date, status, funnel_id, lead_id')
+    .eq('user_id', userId)
+    .not('funnel_id', 'is', null)
+    .not('appointment_date', 'is', null)
+    .gte('appointment_date', startDateStr);
+
+  if (error) throw new Error(`Failed to fetch call_events: ${error.message}`);
+
+  // Field name mapping per call type
+  const FIELD_MAP: Record<string, { termin: string; call: string }> = {
+    setting: { termin: 'SettingTermin', call: 'SettingCall' },
+    closing: { termin: 'ClosingTermin', call: 'ClosingCall' },
+  };
+
+  // Aggregate by funnel_id + appointment_date + field
+  // Use Sets of lead_ids to deduplicate (same lead, multiple call_events → count once)
+  const aggregation = new Map<string, {
+    funnel_id: string; year: number; month: number; day: number;
+    field_name: string; leads: Set<string>;
+  }>();
+
+  for (const ce of callEvents || []) {
+    const fields = FIELD_MAP[ce.call_type];
+    if (!fields || !ce.funnel_id || !ce.appointment_date) continue;
+
+    // Parse appointment_date (DATE type = 'YYYY-MM-DD', no timezone conversion needed)
+    const [yearStr, monthStr, dayStr] = ce.appointment_date.split('-');
+    const year = parseInt(yearStr);
+    const month = parseInt(monthStr) - 1; // 0-based (JS convention)
+    const day = parseInt(dayStr);
+    const leadKey = ce.lead_id || `anon-${ce.id}`;
+
+    // Termin count: showed or no_show
+    if (['showed', 'no_show'].includes(ce.status)) {
+      const terminKey = `${ce.funnel_id}|${year}|${month}|${day}|${fields.termin}`;
+      if (!aggregation.has(terminKey)) {
+        aggregation.set(terminKey, { funnel_id: ce.funnel_id, year, month, day, field_name: fields.termin, leads: new Set() });
+      }
+      aggregation.get(terminKey)!.leads.add(leadKey);
+    }
+
+    // Call count: showed only
+    if (ce.status === 'showed') {
+      const callKey = `${ce.funnel_id}|${year}|${month}|${day}|${fields.call}`;
+      if (!aggregation.has(callKey)) {
+        aggregation.set(callKey, { funnel_id: ce.funnel_id, year, month, day, field_name: fields.call, leads: new Set() });
+      }
+      aggregation.get(callKey)!.leads.add(leadKey);
+    }
+  }
+
+  if (aggregation.size === 0) return 0;
+
+  const rows = Array.from(aggregation.values()).map(({ funnel_id, year, month, day, field_name, leads }) => ({
+    user_id: userId, funnel_id, year, month, day, field_name,
+    value: leads.size,
+    updated_at: new Date().toISOString(),
+  }));
+
+  const { error: upsertError } = await supabase
+    .from('tracking_sheet_data')
+    .upsert(rows, { onConflict: 'user_id,funnel_id,year,month,day,field_name', ignoreDuplicates: false });
+
+  if (upsertError) throw new Error(`Failed to save to tracking_sheet_data: ${upsertError.message}`);
+  return rows.length;
+}
+
 // ── syncCalendlyEventsToTrackingSheet ─────────────────────────────────────────
+// Original function — syncs Booking counts from events table (by booking_date)
 async function syncCalendlyEventsToTrackingSheet(supabase: any, userId: string, daysBack = 90): Promise<number> {
   const EVENT_FIELD_MAP: Record<string, string> = {
     settingBooking: 'SettingBooking',
@@ -472,7 +642,7 @@ function detectSpam(name: string | null, email: string, phone: string | null, an
     const trimmed = v.trim();
     if (trimmed.length < 2) return false;
     if (PHONE_LIKE.test(trimmed)) return false;
-    if ((trimmed.match(/[a-zA-ZäöüÄÖÜ]/g) || []).length < 2) return false; // skip values with no/few letters (times, dates, numbers)
+    if ((trimmed.match(/[a-zA-ZäöüÄÖÜ]/g) || []).length < 2) return false;
     return !VOWELS.test(trimmed);
   });
   if (anyAnswerNoVowels) { score += 2; reasons.push('answer with no vowels'); }

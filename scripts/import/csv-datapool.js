@@ -1232,6 +1232,27 @@
             }
           }
 
+        // Deduplicate eventBatch: skip events that already exist (same lead + type + day)
+        if (eventBatch.length > 0) {
+          const leadIds = [...new Set(eventBatch.map(e => e.lead_id))];
+          const { data: existingEvents } = await window.SupabaseClient
+            .from('events')
+            .select('lead_id, event_type, event_date')
+            .in('lead_id', leadIds);
+
+          const existingKeys = new Set(
+            (existingEvents || []).map(e =>
+              `${e.lead_id}:${e.event_type}:${(e.event_date || '').substring(0, 10)}`
+            )
+          );
+
+          const dedupedBatch = eventBatch.filter(e =>
+            !existingKeys.has(`${e.lead_id}:${e.event_type}:${(e.event_date || '').substring(0, 10)}`)
+          );
+          eventBatch.length = 0;
+          eventBatch.push(...dedupedBatch);
+        }
+
         // Batch insert events
         if (eventBatch.length > 0) {
           const { data: insertedEvents, error: eventError } = await window.SupabaseClient

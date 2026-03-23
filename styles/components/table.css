@@ -4,12 +4,14 @@
 .table-wrap {
   overflow-x: auto;
   overflow-y: visible;
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 0 0 6px 0;
-  margin: 0 0 12px 0;
+  margin: 0 0 16px 0;
   box-sizing: border-box;
   width: fit-content;
   max-width: 100%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 table {
@@ -18,7 +20,6 @@ table {
   border-spacing: 0;
   min-width: 1900px;
   background: var(--card);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   margin: 0;
 }
 
@@ -77,10 +78,10 @@ td.weekday {
   padding: 4px 6px !important;
 }
 
-/* Sonntag (orange) */
+/* Sonntag (burnt orange) */
 td.sunday-cell {
-  background: #dc8c37 !important;
-  color: #f2f2f2 !important;
+  background: #b85c1a !important;
+  color: #fff3e8 !important;
   font-weight: 600 !important;
   text-align: center;
   cursor: default !important;
@@ -115,7 +116,7 @@ input[type="text"]:focus,
 input[type="number"]:focus,
 input[type="date"]:focus {
   background: #fff;
-  outline: 2px solid #1877f2;
+  outline: 2px solid var(--primary);
   outline-offset: -2px;
   box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.1);
   pointer-events: auto;

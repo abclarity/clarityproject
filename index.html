@@ -700,8 +700,8 @@
             <p>CRM & Call-Daten synchronisieren</p>
             <p class="integration-fills">Füllt: <strong>Setting Calls, Closing Calls</strong></p>
           </div>
-          <button class="btn-secondary" disabled>
-            Bald verfügbar
+          <button class="btn-primary" onclick="document.getElementById('integrations-modal').style.display='none'; window.CloseAPI.openConnectionModal();">
+            Verbinden
           </button>
         </div>
 
@@ -758,6 +758,24 @@
     </div>
   </div>
 
+  <!-- Modal: Close.io Integration -->
+  <div id="closeio-modal" class="modal hidden">
+    <div class="modal-content" style="max-width: 600px;">
+      <h2>📞 Close.io Integration</h2>
+      <p style="font-size: 14px; color: #666; margin-bottom: 20px;">
+        Verbinde dein Close.io-Konto, um Setting- und Closing-Calls automatisch zu tracken.
+      </p>
+      <div id="closeio-content">
+        <!-- Wird dynamisch von CloseAPI.renderConnectionUI() befüllt -->
+      </div>
+      <div class="buttons" style="margin-top: 20px;">
+        <button type="button" onclick="window.CloseAPI.closeConnectionModal()" class="btn-secondary">
+          Schließen
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Typeform Integration -->
   <!-- Modal: Typeform Integration (OAuth Flow) -->
   <div id="typeform-modal" class="modal hidden">
@@ -797,6 +815,7 @@
   <script src="scripts/api/facebook-traffic-api.js"></script>
   <script src="scripts/api/typeform-api.js"></script>
   <script src="scripts/api/calendly-api.js"></script>
+  <script src="scripts/api/close-api.js"></script>
   <script src="scripts/api/datapool-api.js"></script>
 
   <!-- INTEGRATIONS -->

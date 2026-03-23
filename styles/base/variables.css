@@ -6,8 +6,12 @@
   --card: #ffffff;
   --muted: #777;
   --formula-bg: #f0f0f0;
-  --sunday-bg: #fff3e0;
-  --header-bg: #333;
+  --sunday-bg: #b85c1a;
+  --header-bg: #0f1e3d;
   --border-light: #e0e0e0;
   --border-dark: #444;
+
+  --primary: #3b82f6;
+  --primary-dark: #2563eb;
+  --primary-light: rgba(59, 130, 246, 0.12);
 }

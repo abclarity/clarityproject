@@ -270,12 +270,24 @@
         currentDate.setDate(currentDate.getDate() + 1);
       }
 
-      // Deduplicate by campaign_id + date (keep only latest entry per campaign per day)
+      // Deduplicate by campaign_id + date (keep max values per campaign per day)
       const uniqueMetrics = {};
       (metrics || []).forEach(m => {
         const key = `${m.date}_${m.campaign_id}`;
-        if (!uniqueMetrics[key] || new Date(m.created_at) > new Date(uniqueMetrics[key].created_at)) {
-          uniqueMetrics[key] = m;
+        if (!uniqueMetrics[key]) {
+          uniqueMetrics[key] = {
+            ...m,
+            adspend: parseFloat(m.adspend || 0),
+            impressions: parseInt(m.impressions || 0),
+            reach: parseInt(m.reach || 0),
+            clicks: parseInt(m.clicks || 0)
+          };
+        } else {
+          const existing = uniqueMetrics[key];
+          existing.adspend = Math.max(existing.adspend, parseFloat(m.adspend || 0));
+          existing.impressions = Math.max(existing.impressions, parseInt(m.impressions || 0));
+          existing.reach = Math.max(existing.reach, parseInt(m.reach || 0));
+          existing.clicks = Math.max(existing.clicks, parseInt(m.clicks || 0));
         }
       });
 
@@ -1030,7 +1042,7 @@
               <button class="modal-close" onclick="document.getElementById('accountSelectionModal').remove()">&times;</button>
             </div>
             <div class="modal-body">
-              <p style="margin-bottom: 20px;">Wähle die Ad Accounts und Kampagnen-Filter aus:</p>
+              <p style="margin-bottom: 20px;">Wähle die Ad Accounts aus:</p>
               
               <label style="display: block; margin-bottom: 8px; font-weight: 600;">Zeitraum für initialen Sync:</label>
               <select id="syncDaysBack" style="width: 100%; padding: 8px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 4px;">
@@ -1041,16 +1053,13 @@
               </select>
 
               <div style="max-height: 500px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 12px;">
-                ${allAccounts.map(account => {
-                  const filter = account.campaign_filter || { enabled: false, rules: [] };
-                  return `
-                  <div style="margin-bottom: 20px; padding: 12px; border-left: 3px solid #4285f4; background: #f8f9fa; border-radius: 4px;">
-                    <div style="display: flex; align-items: flex-start; margin-bottom: 12px;">
-                      <input type="checkbox" 
-                             class="account-checkbox" 
+                ${allAccounts.map(account => `
+                  <div style="margin-bottom: 12px; padding: 12px; border-left: 3px solid #4285f4; background: #f8f9fa; border-radius: 4px;">
+                    <div style="display: flex; align-items: flex-start;">
+                      <input type="checkbox"
+                             class="account-checkbox"
                              data-account-id="${account.ad_account_id}"
                              ${account.sync_enabled ? 'checked' : ''}
-                             onchange="document.getElementById('filter-${account.ad_account_id}').style.display = this.checked ? 'block' : 'none'"
                              style="margin-right: 12px; margin-top: 4px; cursor: pointer;">
                       <div style="flex: 1;">
                         <div style="font-weight: 600; font-size: 15px; margin-bottom: 4px;">${account.name}</div>
@@ -1060,70 +1069,8 @@
                         </div>
                       </div>
                     </div>
-                    
-                    <div id="filter-${account.ad_account_id}" 
-                         style="display: ${account.sync_enabled ? 'block' : 'none'}; padding-top: 12px; border-top: 1px solid #ddd;">
-                      <div style="display: flex; align-items: center; margin-bottom: 12px;">
-                        <input type="checkbox" 
-                               class="filter-enabled" 
-                               data-account-id="${account.ad_account_id}"
-                               ${filter.enabled ? 'checked' : ''}
-                               onchange="document.getElementById('rules-${account.ad_account_id}').style.display = this.checked ? 'block' : 'none'"
-                               style="margin-right: 8px; cursor: pointer;">
-                        <span style="font-weight: 500; font-size: 13px;">Kampagnen filtern</span>
-                      </div>
-                      
-                      <div id="rules-${account.ad_account_id}" style="display: ${filter.enabled ? 'block' : 'none'}; margin-left: 24px;">
-                        <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
-                          Nur Kampagnen synchronisieren, deren Name:
-                        </div>
-                        <div class="filter-rules" data-account-id="${account.ad_account_id}">
-                          ${filter.rules && filter.rules.length > 0 ? filter.rules.map((rule, idx) => `
-                            <div class="filter-rule" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
-                              <select class="rule-type" style="padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer;">
-                                <option value="contains" ${rule.type === 'contains' ? 'selected' : ''}>enthält</option>
-                                <option value="starts_with" ${rule.type === 'starts_with' ? 'selected' : ''}>beginnt mit</option>
-                                <option value="ends_with" ${rule.type === 'ends_with' ? 'selected' : ''}>endet mit</option>
-                                <option value="excludes" ${rule.type === 'excludes' ? 'selected' : ''}>enthält NICHT</option>
-                              </select>
-                              <input type="text" 
-                                     class="rule-value" 
-                                     placeholder="z.B. SZM" 
-                                     value="${rule.value || ''}"
-                                     style="flex: 1; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: text; pointer-events: auto; z-index: 1; position: relative;">
-                              <button onclick="this.parentElement.remove(); return false;" 
-                                      type="button"
-                                      style="padding: 6px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">×</button>
-                            </div>
-                          `).join('') : `
-                            <div class="filter-rule" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
-                              <select class="rule-type" style="padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer;">
-                                <option value="contains">enthält</option>
-                                <option value="starts_with">beginnt mit</option>
-                                <option value="ends_with">endet mit</option>
-                                <option value="excludes">enthält NICHT</option>
-                              </select>
-                              <input type="text" 
-                                     class="rule-value" 
-                                     placeholder="z.B. SZM" 
-                                     style="flex: 1; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: text; pointer-events: auto; z-index: 1; position: relative;">
-                              <button onclick="this.parentElement.remove(); return false;" 
-                                      type="button"
-                                      style="padding: 6px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">×</button>
-                            </div>
-                          `}
-                        </div>
-                        <button onclick="window.FacebookTraffic.addFilterRule('${account.ad_account_id}'); return false;" 
-                                type="button"
-                                style="padding: 4px 10px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; margin-top: 4px;">+ Regel hinzufügen</button>
-                        <div style="font-size: 11px; color: #95a5a6; margin-top: 8px; font-style: italic;">
-                          💡 Mehrere Regeln werden mit ODER verknüpft
-                        </div>
-                      </div>
-                    </div>
                   </div>
-                `;
-                }).join('')}
+                `).join('')}
               </div>
             </div>
             <div class="modal-footer">
@@ -1136,30 +1083,6 @@
 
       // Add modal to DOM
       document.body.insertAdjacentHTML('beforeend', modalHtml);
-    },
-
-    addFilterRule(accountId) {
-      const rulesContainer = document.querySelector(`.filter-rules[data-account-id="${accountId}"]`);
-      if (!rulesContainer) return;
-
-      const ruleHtml = `
-        <div class="filter-rule" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
-          <select class="rule-type" style="padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer;">
-            <option value="contains">enthält</option>
-            <option value="starts_with">beginnt mit</option>
-            <option value="ends_with">endet mit</option>
-            <option value="excludes">enthält NICHT</option>
-          </select>
-          <input type="text" 
-                 class="rule-value" 
-                 placeholder="z.B. SZM" 
-                 style="flex: 1; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: text; pointer-events: auto; z-index: 1; position: relative;">
-          <button onclick="this.parentElement.remove(); return false;" 
-                  type="button"
-                  style="padding: 6px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">×</button>
-        </div>
-      `;
-      rulesContainer.insertAdjacentHTML('beforeend', ruleHtml);
     },
 
     async confirmAccountSelection() {
@@ -1178,31 +1101,7 @@
 
         const daysBack = parseInt(document.getElementById('syncDaysBack')?.value || '90');
 
-        // Collect filter rules for each account
-        const accountFilters = {};
-        selectedAccountIds.forEach(accountId => {
-          const filterEnabled = document.querySelector(`.filter-enabled[data-account-id="${accountId}"]`)?.checked || false;
-          const rulesContainer = document.querySelector(`.filter-rules[data-account-id="${accountId}"]`);
-          
-          const rules = [];
-          if (filterEnabled && rulesContainer) {
-            const ruleElements = rulesContainer.querySelectorAll('.filter-rule');
-            ruleElements.forEach(ruleEl => {
-              const type = ruleEl.querySelector('.rule-type')?.value;
-              const value = ruleEl.querySelector('.rule-value')?.value.trim();
-              if (value) {
-                rules.push({ type, value });
-              }
-            });
-          }
 
-          accountFilters[accountId] = {
-            enabled: filterEnabled && rules.length > 0,
-            rules: rules
-          };
-        });
-
-        
 
         // Close modal
         document.getElementById('accountSelectionModal')?.remove();
@@ -1223,9 +1122,9 @@
         for (const accountId of selectedAccountIds) {
           const { error: enableError } = await window.SupabaseClient
             .from('facebook_ad_accounts')
-            .update({ 
+            .update({
               sync_enabled: true,
-              campaign_filter: accountFilters[accountId]
+              campaign_filter: { enabled: false, rules: [] }
             })
             .eq('ad_account_id', accountId);
 

@@ -459,6 +459,19 @@ Deno.serve(async (req) => {
                 filteredSurveyAnswers[questionLabel] = answers[fieldId];
               }
             }
+          } else {
+            // No filter configured → use all answers (excluding email/phone)
+            const skipFields = new Set(
+              (formMapping.fields || [])
+                .filter((f: any) => f.type === 'email' || f.type === 'phone_number')
+                .map((f: any) => f.id)
+            );
+            for (const [fieldId, value] of Object.entries(answers)) {
+              if (skipFields.has(fieldId)) continue;
+              const field = formMapping.fields?.find((f: any) => f.id === fieldId);
+              const label = field?.title || fieldId;
+              filteredSurveyAnswers[label] = value;
+            }
           }
 
           console.log(`Extracted ${Object.keys(answers).length} answers`);
@@ -502,45 +515,85 @@ Deno.serve(async (req) => {
             console.log(`🚫 Spam detected (score ${spam.score}): ${spam.reasons.join(', ')}`);
           }
 
-          // ── Check if already processed ───────────────────────────────────────
-          const { data: existing, error: existError } = await supabase
+          // ── Claim response_id atomically (same pattern as webhook) ──────────
+          // Insert placeholder FIRST. If unique constraint fires → already claimed.
+          const { data: logClaim, error: claimError } = await supabase
             .from('typeform_events_log')
-            .select('response_id, lead_id, event_id')
-            .eq('response_id', response.response_id)
-            .maybeSingle();
+            .insert({
+              form_id: form_id,
+              response_id: response.response_id,
+              raw_payload: response,
+            })
+            .select('id')
+            .single();
 
-          if (existing && !existError) {
-            // Check if lead actually still exists in DB (may have been manually deleted)
-            let leadStillExists = false;
-            if (existing.lead_id) {
-              const { data: leadCheck } = await supabase.from('leads').select('id').eq('id', existing.lead_id).maybeSingle();
-              leadStillExists = !!leadCheck;
-            }
+          if (claimError) {
+            if (claimError.code === '23505') {
+              // Already claimed – fetch existing entry to decide what to do
+              const { data: existing } = await supabase
+                .from('typeform_events_log')
+                .select('response_id, lead_id, event_id, created_at')
+                .eq('response_id', response.response_id)
+                .maybeSingle();
 
-            if (!existing.lead_id || !leadStillExists) {
-              // Lead was deleted → clear stale log entry and re-process
-              console.log(`Lead was deleted for ${response.response_id}, clearing stale log and re-processing`);
-              await supabase.from('typeform_events_log').delete().eq('response_id', response.response_id);
-              // fall through to full import below
-            } else {
-              // Lead still exists → re-evaluate spam and update if needed
-              console.log(`Already processed ${response.response_id} (lead ${existing.lead_id}), re-evaluating spam...`);
-              if (spam.isSpam) {
-                await supabase.from('leads').update({
-                  is_spam: true,
-                  lead_status: 'spam',
-                }).eq('id', existing.lead_id);
-                if (existing.event_id) {
-                  await supabase.from('events').update({ is_spam: true }).eq('id', existing.event_id);
+              if (existing) {
+                // Fresh placeholder (< 10 min, no lead_id) → webhook still processing → skip
+                if (!existing.lead_id && existing.created_at) {
+                  const ageMs = Date.now() - new Date(existing.created_at).getTime();
+                  if (ageMs < 10 * 60 * 1000) {
+                    console.log(`Response ${response.response_id} is being processed by webhook (age ${Math.round(ageMs/1000)}s), skipping`);
+                    skippedCount++;
+                    continue;
+                  }
                 }
-                console.log(`🚫 Updated existing lead ${existing.lead_id} to spam`);
+
+                // Check if lead still exists
+                let leadStillExists = false;
+                if (existing.lead_id) {
+                  const { data: leadCheck } = await supabase.from('leads').select('id').eq('id', existing.lead_id).maybeSingle();
+                  leadStillExists = !!leadCheck;
+                }
+
+                if (existing.lead_id && leadStillExists) {
+                  // Lead exists → re-evaluate spam and skip
+                  console.log(`Already processed ${response.response_id} (lead ${existing.lead_id}), re-evaluating spam...`);
+                  if (spam.isSpam) {
+                    await supabase.from('leads').update({ is_spam: true, lead_status: 'spam' }).eq('id', existing.lead_id);
+                    if (existing.event_id) {
+                      await supabase.from('events').update({ is_spam: true }).eq('id', existing.event_id);
+                    }
+                    console.log(`🚫 Updated existing lead ${existing.lead_id} to spam`);
+                  }
+                  skippedCount++;
+                  continue;
+                }
+
+                // Stale entry (lead deleted or lead_id never set after 10 min) → delete and re-claim
+                console.log(`Stale log entry for ${response.response_id}, clearing and re-processing`);
+                await supabase.from('typeform_events_log').delete().eq('response_id', response.response_id);
+                // Re-insert claim
+                const { error: reclaimError } = await supabase
+                  .from('typeform_events_log')
+                  .insert({ form_id: form_id, response_id: response.response_id, raw_payload: response });
+                if (reclaimError) {
+                  console.error(`❌ Re-claim failed for ${response.response_id}:`, reclaimError);
+                  errorCount++;
+                  continue;
+                }
+              } else {
+                // Conflict but no row found – race resolved itself, skip to be safe
+                skippedCount++;
+                continue;
               }
-              skippedCount++;
+            } else {
+              console.error(`❌ Log claim failed for ${response.response_id}:`, claimError);
+              errorCount++;
               continue;
             }
           }
 
-          console.log(`Not a duplicate, proceeding with import...`);
+          const logEntryId = logClaim?.id;
+          console.log(`Claimed response_id ${response.response_id}, proceeding with import...`);
 
           // Check qualification
           let isQualified = false;
@@ -635,6 +688,10 @@ Deno.serve(async (req) => {
                 event_date: response.submitted_at || new Date().toISOString(),
                 event_source: 'typeform',
                 is_spam: spam.isSpam,
+                metadata: {
+                  typeform_answers: filteredSurveyAnswers,
+                  response_id: response.response_id,
+                },
               });
 
             if (eventError) {
@@ -646,23 +703,24 @@ Deno.serve(async (req) => {
             console.log(`✅ Event created: ${eventType}`);
           }
 
-          // Log to typeform_events_log
-          const { error: logError } = await supabase
-            .from('typeform_events_log')
-            .insert({
-              user_id: userId,
-              form_id: form_id,
-              response_id: response.response_id,
-              lead_id: lead.id,
-              event_id: null, // Could fetch event.id if needed
-              event_type: eventType,
-              is_qualified: isQualified,
-              raw_payload: response,
-              processed_at: new Date().toISOString(),
-            });
+          // Update the placeholder log entry with final data
+          const logUpdatePayload: Record<string, any> = {
+            user_id: userId,
+            lead_id: lead.id,
+            event_type: eventType,
+            is_qualified: isQualified,
+            processed_at: new Date().toISOString(),
+          };
+          if (logEntryId) {
+            await supabase.from('typeform_events_log').update(logUpdatePayload).eq('id', logEntryId);
+          } else {
+            // Fallback: update by response_id (reclaim path)
+            await supabase.from('typeform_events_log').update(logUpdatePayload).eq('response_id', response.response_id);
+          }
 
+          const { error: logError } = { error: null }; // kept for structure below
           if (logError) {
-            console.error('❌ Log creation failed:', logError);
+            console.error('❌ Log update failed:', logError);
           } else {
             console.log(`✅ Logged to typeform_events_log`);
           }

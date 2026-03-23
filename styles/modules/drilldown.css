@@ -1,0 +1,163 @@
+/* ── Cell Drilldown Popover ─────────────────────────────────────────── */
+
+/* Drillable input cells: show pointer and subtle indicator */
+td.drillable-cell input {
+  cursor: pointer;
+}
+td.drillable-cell input:hover {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--primary-color, #3b82f6);
+}
+td.drillable-cell input:focus {
+  cursor: text;
+  text-decoration: none;
+}
+
+/* Drillable CR cells (Conversion Rate columns) */
+td.drillable-cr-cell {
+  cursor: pointer;
+}
+td.drillable-cr-cell:hover {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: #f59e0b;
+}
+
+/* Popover container */
+.drilldown-popover {
+  position: fixed;
+  z-index: 9999;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  width: 280px;
+  max-height: 380px;
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+.drilldown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 8px 8px 0 0;
+  flex-shrink: 0;
+}
+
+.drilldown-title {
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 13px;
+}
+
+.drilldown-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.drilldown-close:hover {
+  color: #475569;
+}
+
+.drilldown-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0;
+}
+
+.drilldown-loading {
+  padding: 16px 12px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.drilldown-empty {
+  padding: 16px 12px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.drilldown-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  padding: 7px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  gap: 0 8px;
+}
+.drilldown-item:last-child {
+  border-bottom: none;
+}
+
+.drilldown-name {
+  font-weight: 500;
+  color: #1e293b;
+  grid-column: 1;
+  grid-row: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drilldown-time {
+  grid-column: 2;
+  grid-row: 1;
+  color: #94a3b8;
+  font-size: 12px;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.drilldown-email {
+  grid-column: 1 / 3;
+  grid-row: 2;
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drilldown-revenue {
+  grid-column: 1 / 3;
+  grid-row: 3;
+  color: #16a34a;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.drilldown-footer {
+  padding: 6px 12px;
+  border-top: 1px solid #e2e8f0;
+  color: #94a3b8;
+  font-size: 11px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.drilldown-copy-btn {
+  background: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  color: #64748b;
+  transition: background 0.15s;
+}
+.drilldown-copy-btn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}

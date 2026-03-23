@@ -7,7 +7,7 @@
   top: 0;
   bottom: 0;
   width: 220px;
-  background: #2c3e50;
+  background: linear-gradient(180deg, #0f1e3d 0%, #1a3560 50%, #0d2847 100%);
   color: #ecf0f1;
   z-index: 10000;
   display: flex;
@@ -76,7 +76,23 @@
 
 .sidebar-item.active {
   background: rgba(255, 255, 255, 0.15);
-  border-left-color: #3498db;
+  border-left-color: #7dd3fc;
+}
+
+.sidebar-item--coming-soon {
+  opacity: 0.5;
+}
+
+.sidebar-item--coming-soon:hover {
+  opacity: 0.7;
+}
+
+#comingSoonView {
+  display: none;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
 }
 
 .sidebar-icon {
@@ -117,6 +133,15 @@ body:has(.app-sidebar) #tabs {
 
 body:has(.app-sidebar.collapsed) #tabs {
   margin-left: 60px;
+}
+
+body:has(.app-sidebar) #app-header {
+  left: 220px;
+  transition: left 0.3s ease;
+}
+
+body:has(.app-sidebar.collapsed) #app-header {
+  left: 60px;
 }
 
 /* ============================================
@@ -173,14 +198,3 @@ body:has(.app-sidebar.collapsed) #tabs {
   display: none;
 }
 
-/* Header bleibt fixiert über voller Breite */
-body:has(.app-sidebar) .header-bar {
-  padding-left: 238px;
-  padding-right: 60px;
-  transition: padding-left 0.3s ease, padding-right 0.3s ease;
-}
-
-body:has(.app-sidebar.collapsed) .header-bar {
-  padding-left: 78px;
-  padding-right: 54px;
-}

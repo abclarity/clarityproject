@@ -29,7 +29,7 @@ body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 18px 50px 18px;
+  padding: 56px 18px 50px 18px;
   position: relative;
   box-sizing: border-box;
   min-height: 0;

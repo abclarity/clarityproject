@@ -38,7 +38,7 @@
 
 .import-modal select:focus {
   outline: none;
-  border-color: #1877f2;
+  border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.1);
 }
 
@@ -118,7 +118,7 @@
 
 .mapping-clarity-col select:focus {
   outline: none;
-  border-color: #1877f2;
+  border-color: var(--primary);
 }
 
 .mapping-status {
@@ -328,7 +328,7 @@
 
 .survey-question-label:focus {
   outline: none;
-  border-color: #3498db;
+  border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.1);
 }
 
@@ -491,7 +491,7 @@
 .qualification-select:focus,
 .qualification-input:focus {
   outline: none;
-  border-color: #3498db;
+  border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
 
@@ -532,7 +532,7 @@
 
 .answer-option-item:hover {
   background: #e9ecef;
-  border-color: #3498db;
+  border-color: var(--primary);
 }
 
 .answer-option-checkbox {

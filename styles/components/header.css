@@ -2,18 +2,18 @@
    HEADER (Titel + Zoom) - STICKY FIX
    ============================================ */
 #app-header {
-  position: -webkit-sticky;
-  position: sticky;
+  position: fixed;
   top: 0;
-  left: -18px;
-  right: -18px;
-  background: #fff;
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   z-index: 9999;
-  padding: 8px 0 8px 0;
+  padding: 8px 0;
   margin: 0;
-  border-bottom: 1px solid #ccc;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  width: calc(100% + 36px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   box-sizing: border-box;
 }
 

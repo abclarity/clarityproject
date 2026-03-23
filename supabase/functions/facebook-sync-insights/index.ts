@@ -131,35 +131,6 @@ serve(async (req) => {
           .eq('is_active', true)
           .order('priority', { ascending: true });
 
-        // Get campaign filter rules for this account
-        const campaignFilter = account.campaign_filter || { enabled: false, rules: [] };
-
-        // Helper function to check if campaign matches filter rules
-        const matchesFilter = (campaignName: string): boolean => {
-          if (!campaignFilter.enabled || !campaignFilter.rules || campaignFilter.rules.length === 0) {
-            return true; // No filter = include all
-          }
-
-          // Check if campaign matches ANY rule (OR logic)
-          return campaignFilter.rules.some((rule: any) => {
-            const name = campaignName.toLowerCase();
-            const value = rule.value.toLowerCase();
-
-            switch (rule.type) {
-              case 'contains':
-                return name.includes(value);
-              case 'starts_with':
-                return name.startsWith(value);
-              case 'ends_with':
-                return name.endsWith(value);
-              case 'excludes':
-                return !name.includes(value);
-              default:
-                return true;
-            }
-          });
-        };
-
         // Helper function to match campaign to funnel
         const matchFunnel = (campaignName: string): string | null => {
           if (!mappings) return null;
@@ -184,8 +155,7 @@ serve(async (req) => {
           return linkClicks;
         };
 
-        // Insert/update insights into traffic_metrics (with filter)
-        let filtered = 0;
+        // Insert/update insights into traffic_metrics
         let inserted = 0;
         const errors: string[] = [];
 
@@ -199,12 +169,7 @@ serve(async (req) => {
           .gte('date', dateFrom)
           .lte('date', dateTo);
 
-        const campaignRows = insights
-          .filter((insight: any) => {
-            if (!matchesFilter(insight.campaign_name)) { filtered++; return false; }
-            return true;
-          })
-          .map((insight: any) => {
+        const campaignRows = insights.map((insight: any) => {
             const lc = calcLinkClicks(insight);
             const imp = parseInt(insight.impressions || '0');
             const sp = parseFloat(insight.spend || '0');
@@ -274,7 +239,7 @@ serve(async (req) => {
               .lte('date', dateTo);
 
             const adRows = adInsights
-              .filter((ad: any) => ad.ad_id && matchesFilter(ad.campaign_name))
+              .filter((ad: any) => ad.ad_id)
               .map((ad: any) => {
                 const lc = calcLinkClicks(ad);
                 const imp = parseInt(ad.impressions || '0');
@@ -331,13 +296,12 @@ serve(async (req) => {
           ad_account_id: adAccountId,
           name: account.name,
           insights_count: insights.length,
-          filtered_count: filtered,
           inserted_count: inserted,
           status: inserted > 0 ? 'success' : 'no_data_inserted',
           errors: errors.length > 0 ? errors : undefined,
         });
-        
-        console.log(`✅ Account ${account.name}: ${insights.length} insights fetched, ${filtered} filtered, ${inserted} inserted`);
+
+        console.log(`✅ Account ${account.name}: ${insights.length} insights fetched, ${inserted} inserted`);
 
       } catch (accountError) {
         console.error(`Error syncing account ${account.ad_account_id}:`, accountError);

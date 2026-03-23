@@ -4,7 +4,7 @@
 
 /* Standard: Input-Zellen (weiß → hellblau) */
 td.cell-selected {
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
   background: #e3f2fd ! important;
   position: relative;
@@ -13,14 +13,14 @@ td.cell-selected {
 /* Formel-Zellen (grau → grau + blauer Rand) */
 td.cell-selected.calc {
   background: var(--formula-bg) !important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
-/* Sonntag-Zellen (orange → orange + blauer Rand) */
-td.cell-selected. sunday-cell {
-  background: #dc8c37 !important;
-  outline: 2px solid #1877f2 !important;
+/* Sonntag-Zellen (dunkelblau + blauer Rand) */
+td.cell-selected.sunday-cell {
+  background: #b85c1a !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
@@ -29,65 +29,65 @@ td.cell-selected.weekday,
 #tracker tbody td.cell-selected:nth-child(1),
 #tracker tbody td.cell-selected:nth-child(2) {
   background: #696969 !important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
 /* Weekly-Zeilen (weiß/grau → original + blauer Rand) */
 tr[data-week] td.cell-selected {
   background: #fff !important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
 tr[data-week] td.cell-selected.calc {
   background: var(--formula-bg) !important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
 tr[data-week] td.cell-selected:nth-child(1),
 tr[data-week] td.cell-selected:nth-child(2) {
   background: #696969 !important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
 /* Quarterly-Zeilen (weiß/grau → original + blauer Rand) */
 tr[data-quarter] td.cell-selected {
   background: #fff !important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
 tr[data-quarter] td.cell-selected.calc {
   background: var(--formula-bg) ! important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
 tr[data-quarter] td. cell-selected:first-child {
   background: #696969 !important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
 /* Jahr-Dashboard: Monats-Zeilen */
 #year-body td.cell-selected {
   background: #fff !important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
 #year-body td.cell-selected.calc {
   background: var(--formula-bg) !important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
 #year-body td.cell-selected:first-child {
   background: #696969 !important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
@@ -95,7 +95,7 @@ tr[data-quarter] td. cell-selected:first-child {
 #year-summary td.cell-selected {
   background: var(--header-bg) !important;
   color: #fff !important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
@@ -104,20 +104,20 @@ tr[data-quarter] td. cell-selected:first-child {
 #summary-row td.cell-selected {
   background: var(--header-bg) !important;
   color: #fff !important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
 tfoot tr#summary-row td.cell-selected {
   background: var(--header-bg) !important;
   color: #fff !important;
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
 }
 
 /* Editing State */
 td.cell-editing {
-  outline: 2px solid #1877f2 !important;
+  outline: 2px solid var(--primary) !important;
   outline-offset: -2px;
   box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.1);
 }

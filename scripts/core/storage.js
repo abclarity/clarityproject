@@ -488,8 +488,11 @@
       // Konvertiere Array zu Objekt: { Adspend_1: 100, Leads_5: 23, ... }
       const monthData = {};
       data.forEach(row => {
-        const key = `${row.field_name}_${row.day}`;
-        monthData[key] = parseFloat(row.value);
+        const parsed = parseFloat(row.value);
+        if (!isNaN(parsed)) {
+          const key = `${row.field_name}_${row.day}`;
+          monthData[key] = parsed;
+        }
       });
 
       return monthData;

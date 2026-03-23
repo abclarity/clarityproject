@@ -2759,47 +2759,7 @@
       let html = '';
       let surveyEventFound = false;
 
-      // 1. Check lead.metadata for Typeform answers (stored in lead during import)
-      if (lead.metadata && lead.metadata.typeform_answers && Object.keys(lead.metadata.typeform_answers).length > 0) {
-        const submittedAt = lead.metadata.typeform_submitted_at || lead.created_at;
-        const eventDateTime = new Date(submittedAt);
-        const date = eventDateTime.toLocaleDateString('de-DE');
-        const time = eventDateTime.toLocaleTimeString('de-DE', {
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-
-        let questionsHTML = '';
-        Object.entries(lead.metadata.typeform_answers).forEach(([question, answer]) => {
-          // Handle Multiple-Choice objects: { id, ref, label }
-          let displayAnswer = answer;
-          if (typeof answer === 'object' && answer !== null && answer.label) {
-            displayAnswer = answer.label;
-          }
-          
-          questionsHTML += `
-            <div class="survey-answer-item">
-              <div class="survey-question">${question}</div>
-              <div class="survey-answer">${displayAnswer}</div>
-            </div>
-          `;
-        });
-
-        html += `
-          <div class="survey-section">
-            <div class="survey-section-header">
-              <span class="survey-icon">📝</span>
-              <span class="survey-event-type">Typeform Survey</span>
-              <span class="survey-date">${date} ${time}</span>
-            </div>
-            <div class="survey-answers">
-              ${questionsHTML}
-            </div>
-          </div>
-        `;
-      }
-
-      // 2. Check events for survey_questions (CSV), typeform_answers, or raw answers (webhook fallback)
+      // 1. Check events for survey_questions (CSV), typeform_answers, or raw answers (webhook fallback)
       const surveyEvents = events.filter(e =>
         e.event_type === 'survey' || e.event_type === 'surveyQuali' ||
         (e.metadata && (e.metadata.survey_questions || e.metadata.typeform_answers))
@@ -2884,6 +2844,39 @@
           </div>
         `;
       });
+
+      // 2. Fallback: lead.metadata.typeform_answers – only if no event rendered answers
+      if (!html && lead.metadata && lead.metadata.typeform_answers && Object.keys(lead.metadata.typeform_answers).length > 0) {
+        const submittedAt = lead.metadata.typeform_submitted_at || lead.created_at;
+        const eventDateTime = new Date(submittedAt);
+        const date = eventDateTime.toLocaleDateString('de-DE');
+        const time = eventDateTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+
+        let questionsHTML = '';
+        Object.entries(lead.metadata.typeform_answers).forEach(([question, answer]) => {
+          let displayAnswer = answer;
+          if (typeof answer === 'object' && answer !== null && answer.label) displayAnswer = answer.label;
+          questionsHTML += `
+            <div class="survey-answer-item">
+              <div class="survey-question">${question}</div>
+              <div class="survey-answer">${displayAnswer}</div>
+            </div>
+          `;
+        });
+
+        html += `
+          <div class="survey-section">
+            <div class="survey-section-header">
+              <span class="survey-icon">📝</span>
+              <span class="survey-event-type">Typeform Survey</span>
+              <span class="survey-date">${date} ${time}</span>
+            </div>
+            <div class="survey-answers">
+              ${questionsHTML}
+            </div>
+          </div>
+        `;
+      }
 
       if (!html) {
         if (surveyEventFound) {

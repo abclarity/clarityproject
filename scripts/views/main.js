@@ -153,6 +153,7 @@
         </div>
         <div class="right-header">
           <div class="header-separator"></div>
+          <button id="lockTrackingBtn" class="lock-btn" title="Bearbeitung sperren">🔒</button>
           <button id="importDataBtn" class="import-btn" title="Daten importieren">
             ⬆ UPLOAD
           </button>
@@ -174,7 +175,40 @@
     if (window.setupImportButton) {
       window.setupImportButton();
     }
+
+    // 🔒 Lock-Button NACH jedem Header-Rebuild aktivieren
+    setupLockButton();
   };
+
+  // === Lock Button Setup ===
+  function setupLockButton() {
+    const btn = document.getElementById('lockTrackingBtn');
+    if (!btn) return;
+
+    const isLocked = localStorage.getItem('clarity_tracking_locked') !== 'false';
+    applyLockState(isLocked);
+    btn.textContent = isLocked ? '🔒' : '🔓';
+    btn.classList.toggle('unlocked', !isLocked);
+
+    btn.addEventListener('click', () => {
+      const currentlyLocked = localStorage.getItem('clarity_tracking_locked') !== 'false';
+      const newLocked = !currentlyLocked;
+      localStorage.setItem('clarity_tracking_locked', newLocked ? 'true' : 'false');
+      applyLockState(newLocked);
+      btn.textContent = newLocked ? '🔒' : '🔓';
+      btn.classList.toggle('unlocked', !newLocked);
+    });
+  }
+
+  function applyLockState(locked) {
+    const tracker = document.getElementById('tracker');
+    if (!tracker) return;
+    if (locked) {
+      tracker.classList.add('tracking-locked');
+    } else {
+      tracker.classList.remove('tracking-locked');
+    }
+  }
 
   // === Funnel-Buttons Setup ===
   function setupFunnelButtons() {
@@ -494,6 +528,7 @@
 
   // Export globally
   window.switchToFunnel = switchToFunnel;
+  window.applyLockState = applyLockState;
 
   // === Switch to Month ===
   window.switchToMonth = async function(y, mIdx) {

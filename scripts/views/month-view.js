@@ -5,6 +5,317 @@
   const { calculateKPIs, formatValue, weekdayLetter, isoWeekNumber, parseNumber } = ClarityUtils;
   const { euro, num2, int0 } = ClarityFormat;
 
+  // ── Cell Drilldown: which tracking fields map to which event types ──
+  const DRILLABLE_FIELDS = {
+    'Leads':          ['lead'],
+    'Survey':         ['survey', 'surveyQuali'],
+    'SurveyQuali':    ['surveyQuali'],
+    'SettingBooking': ['settingBooking'],
+    'SettingTermin':  ['settingTermin'],
+    'SettingCall':    ['settingCall'],
+    'ClosingBooking': ['closingBooking'],
+    'ClosingTermin':  ['closingTermin'],
+    'ClosingCall':    ['closingCall'],
+    'Units':          ['unit'],
+  };
+
+  const FIELD_LABELS = {
+    'Leads': '📩 Leads', 'Survey': '📋 Survey', 'SurveyQuali': '✅ Survey Quali',
+    'SettingBooking': '📅 Setting Booking', 'SettingTermin': '🎯 Setting Termin',
+    'SettingCall': '📞 Setting Call', 'ClosingBooking': '📅 Closing Booking',
+    'ClosingTermin': '🎯 Closing Termin', 'ClosingCall': '📞 Closing Call',
+    'Units': '💰 Units',
+  };
+
+  // ── CR Drilldown: which CR columns are drillable (both sides have lead-level events) ──
+  const DRILLABLE_CR_FIELDS = {
+    // VideoCR-%: drillbar nur wenn Funnel einen Lead-Step hat (Indirect).
+    // Bei Direct Funnel (Klicks→Survey) finden wir keine lead-Events → zeigen Hinweis.
+    'VideoCR-%':     { numerator: ['survey', 'surveyQuali'], denominator: ['lead'],            label: '📉 Verloren · Video-CR' },
+    'SurveyQuali-%': { numerator: ['surveyQuali'],   denominator: ['survey', 'surveyQuali'], label: '📉 Verloren · Quali-Rate' },
+    'Booking-%':     { numerator: ['closingBooking'], denominator: ['surveyQuali', 'survey'], label: '📉 Verloren · Booking-Rate' },
+    'Quali-%':       { numerator: ['closingTermin'],  denominator: ['closingBooking'],        label: '📉 Verloren · Bestätigungs-Rate' },
+    'SUR-%':         { numerator: ['closingCall'],    denominator: ['closingTermin'],         label: '📉 Verloren · Show-up-Rate' },
+    'SB-%':          { numerator: ['settingBooking'], denominator: ['surveyQuali', 'survey'], label: '📉 Verloren · Setting-Booking' },
+    'SQ-%':          { numerator: ['settingTermin'],  denominator: ['settingBooking'],        label: '📉 Verloren · Setting-Quali' },
+    'SS-%':          { numerator: ['settingCall'],    denominator: ['settingTermin'],         label: '📉 Verloren · Setting-Show-up' },
+    'CB-%':          { numerator: ['closingBooking'], denominator: ['settingCall'],           label: '📉 Verloren · Closing-Booking' },
+    'CQ-%':          { numerator: ['closingTermin'],  denominator: ['closingBooking'],        label: '📉 Verloren · Closing-Quali' },
+    'CS-%':          { numerator: ['closingCall'],    denominator: ['closingTermin'],         label: '📉 Verloren · Closing-Show-up' },
+    'CC%':           { numerator: ['unit'],           denominator: ['closingCall'],           label: '📉 Verloren · Close-Rate' },
+    'LC%':           { numerator: ['unit'],           denominator: ['lead', 'survey'],        label: '📉 Verloren · Lead-to-Close' },
+  };
+
+  let _drilldownCurrentCell = null;
+
+  function closeDrilldown() {
+    const existing = document.getElementById('drilldownPopover');
+    if (existing) existing.remove();
+    _drilldownCurrentCell = null;
+  }
+
+  function positionPopover(popover, td) {
+    const rect = td.getBoundingClientRect();
+    const popW = 280;
+    const margin = 8;
+
+    // Try to place to the right; fall back to left if off-screen
+    let left = rect.right + margin;
+    if (left + popW > window.innerWidth - 8) {
+      left = rect.left - popW - margin;
+    }
+    let top = rect.top;
+    const popH = Math.min(380, window.innerHeight - rect.top - 16);
+    if (top + popH > window.innerHeight - 8) {
+      top = window.innerHeight - popH - 8;
+    }
+
+    popover.style.left  = Math.max(8, left) + 'px';
+    popover.style.top   = Math.max(8, top)  + 'px';
+  }
+
+  async function showDrilldown(td, fieldName, day, funnelId, year, month) {
+    // Toggle: clicking same cell closes the popover
+    if (_drilldownCurrentCell === td) {
+      closeDrilldown();
+      return;
+    }
+    closeDrilldown();
+    _drilldownCurrentCell = td;
+
+    const eventTypes = DRILLABLE_FIELDS[fieldName];
+    if (!eventTypes) return;
+
+    const label = FIELD_LABELS[fieldName] || fieldName;
+    const dateObj = new Date(year, month, day);
+    const dateStr = dateObj.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const dbDate  = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+    const popover = document.createElement('div');
+    popover.className = 'drilldown-popover';
+    popover.id = 'drilldownPopover';
+    popover.innerHTML = `
+      <div class="drilldown-header">
+        <span class="drilldown-title">${label} · ${dateStr}</span>
+        <button class="drilldown-close" title="Schließen">✕</button>
+      </div>
+      <div class="drilldown-list"><div class="drilldown-loading">Lade…</div></div>
+    `;
+    document.body.appendChild(popover);
+    positionPopover(popover, td);
+
+    popover.querySelector('.drilldown-close').addEventListener('click', closeDrilldown);
+
+    // Close on outside click
+    setTimeout(() => {
+      document.addEventListener('mousedown', function outsideClick(e) {
+        if (!popover.contains(e.target)) {
+          closeDrilldown();
+          document.removeEventListener('mousedown', outsideClick);
+        }
+      });
+    }, 0);
+
+    // Close on ESC
+    document.addEventListener('keydown', function escHandler(e) {
+      if (e.key === 'Escape') { closeDrilldown(); document.removeEventListener('keydown', escHandler); }
+    });
+
+    try {
+      const { data: events, error } = await window.SupabaseClient
+        .from('events')
+        .select('event_date, event_type, revenue, cash, leads!inner(name, primary_email)')
+        .eq('funnel_id', funnelId)
+        .in('event_type', eventTypes)
+        .eq('is_spam', false)
+        .gte('event_date', dbDate + 'T00:00:00')
+        .lte('event_date', dbDate + 'T23:59:59')
+        .order('event_date', { ascending: true });
+
+      if (error) throw error;
+
+      const list = popover.querySelector('.drilldown-list');
+      if (!events || events.length === 0) {
+        list.innerHTML = '<div class="drilldown-empty">Keine Einträge gefunden</div>';
+        return;
+      }
+
+      const isUnits = fieldName === 'Units';
+      list.innerHTML = events.map(ev => {
+        const lead = ev.leads || {};
+        const name  = lead.name  || '–';
+        const email = lead.primary_email || '–';
+        const time  = new Date(ev.event_date).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+        const revenueRow = isUnits && (ev.revenue || ev.cash)
+          ? `<div class="drilldown-revenue">
+               ${ev.revenue ? `Rev: ${euro.format(ev.revenue)}` : ''}
+               ${ev.cash    ? ` · Cash: ${euro.format(ev.cash)}` : ''}
+             </div>`
+          : '';
+        return `
+          <div class="drilldown-item">
+            <div class="drilldown-name">${name}</div>
+            <div class="drilldown-time">${time}</div>
+            <div class="drilldown-email">${email}</div>
+            ${revenueRow}
+          </div>`;
+      }).join('');
+
+      // Footer with count + copy button
+      const footer = document.createElement('div');
+      footer.className = 'drilldown-footer';
+      footer.innerHTML = `
+        <span>${events.length} Einträge</span>
+        <button class="drilldown-copy-btn" title="E-Mails kopieren">Copy Emails</button>
+      `;
+      popover.appendChild(footer);
+
+      footer.querySelector('.drilldown-copy-btn').addEventListener('click', () => {
+        const emails = events
+          .map(ev => (ev.leads?.primary_email || '').trim())
+          .filter(Boolean)
+          .join('\n');
+        navigator.clipboard.writeText(emails).then(() => {
+          const btn = footer.querySelector('.drilldown-copy-btn');
+          btn.textContent = '✓ Kopiert!';
+          setTimeout(() => { btn.textContent = 'Copy Emails'; }, 2000);
+        });
+      });
+
+    } catch (err) {
+      const list = popover.querySelector('.drilldown-list');
+      list.innerHTML = '<div class="drilldown-empty">Fehler beim Laden</div>';
+      console.error('❌ Drilldown Fehler:', err);
+    }
+  }
+
+  // ── CR Drilldown: zeigt Leads die Schritt A hatten aber nicht Schritt B ──
+  async function showCRDrilldown(td, crField, day, funnelId, year, month) {
+    if (_drilldownCurrentCell === td) { closeDrilldown(); return; }
+    closeDrilldown();
+    _drilldownCurrentCell = td;
+
+    const crDef = DRILLABLE_CR_FIELDS[crField];
+    if (!crDef) return;
+
+    const dbDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dateStr = new Date(year, month, day).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    const popover = document.createElement('div');
+    popover.className = 'drilldown-popover';
+    popover.id = 'drilldownPopover';
+    popover.innerHTML = `
+      <div class="drilldown-header">
+        <span class="drilldown-title">${crDef.label} · ${dateStr}</span>
+        <button class="drilldown-close" title="Schließen">✕</button>
+      </div>
+      <div class="drilldown-list"><div class="drilldown-loading">Lade…</div></div>
+    `;
+    document.body.appendChild(popover);
+    positionPopover(popover, td);
+    popover.querySelector('.drilldown-close').addEventListener('click', closeDrilldown);
+
+    setTimeout(() => {
+      document.addEventListener('mousedown', function outsideClick(e) {
+        if (!popover.contains(e.target)) {
+          closeDrilldown();
+          document.removeEventListener('mousedown', outsideClick);
+        }
+      });
+    }, 0);
+    document.addEventListener('keydown', function escHandler(e) {
+      if (e.key === 'Escape') { closeDrilldown(); document.removeEventListener('keydown', escHandler); }
+    });
+
+    try {
+      // Schritt A: Denominator-Events holen (wer hat den vorherigen Schritt gemacht?)
+      const { data: denomEvents, error: denomErr } = await window.SupabaseClient
+        .from('events')
+        .select('lead_id, event_date, event_type, leads!inner(name, primary_email)')
+        .eq('funnel_id', funnelId)
+        .in('event_type', crDef.denominator)
+        .eq('is_spam', false)
+        .gte('event_date', dbDate + 'T00:00:00')
+        .lte('event_date', dbDate + 'T23:59:59')
+        .order('event_date', { ascending: true });
+
+      if (denomErr) throw denomErr;
+
+      // Schritt B: Numerator-Events holen (wer hat den nächsten Schritt gemacht?)
+      const { data: numerEvents, error: numerErr } = await window.SupabaseClient
+        .from('events')
+        .select('lead_id')
+        .eq('funnel_id', funnelId)
+        .in('event_type', crDef.numerator)
+        .eq('is_spam', false)
+        .gte('event_date', dbDate + 'T00:00:00')
+        .lte('event_date', dbDate + 'T23:59:59');
+
+      if (numerErr) throw numerErr;
+
+      const numerLeadIds = new Set((numerEvents || []).map(e => e.lead_id));
+
+      // Verloren = hatte Schritt A, aber NICHT Schritt B (pro Lead nur einmal)
+      const seenLeads = new Set();
+      const lostLeads = (denomEvents || []).filter(ev => {
+        if (numerLeadIds.has(ev.lead_id)) return false;
+        if (seenLeads.has(ev.lead_id)) return false;
+        seenLeads.add(ev.lead_id);
+        return true;
+      });
+
+      const list = popover.querySelector('.drilldown-list');
+      if (!denomEvents || denomEvents.length === 0) {
+        list.innerHTML = '<div class="drilldown-empty">Kein vorheriger Schritt mit Lead-Daten in diesem Funnel-Typ</div>';
+        const footer = document.createElement('div');
+        footer.className = 'drilldown-footer';
+        footer.innerHTML = '<span>0 Verloren</span>';
+        popover.appendChild(footer);
+        return;
+      }
+      if (lostLeads.length === 0) {
+        list.innerHTML = '<div class="drilldown-empty">Alle haben konvertiert 🎉</div>';
+      } else {
+        list.innerHTML = lostLeads.map(ev => {
+          const lead = ev.leads || {};
+          const name  = lead.name || '–';
+          const email = lead.primary_email || '–';
+          const time  = new Date(ev.event_date).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+          return `
+            <div class="drilldown-item">
+              <div class="drilldown-name">${name}</div>
+              <div class="drilldown-time">${time}</div>
+              <div class="drilldown-email">${email}</div>
+            </div>`;
+        }).join('');
+      }
+
+      const footer = document.createElement('div');
+      footer.className = 'drilldown-footer';
+      footer.innerHTML = `
+        <span>${lostLeads.length} Verloren</span>
+        ${lostLeads.length > 0 ? '<button class="drilldown-copy-btn">Copy Emails</button>' : ''}
+      `;
+      popover.appendChild(footer);
+
+      if (lostLeads.length > 0) {
+        footer.querySelector('.drilldown-copy-btn').addEventListener('click', () => {
+          const emails = lostLeads.map(ev => (ev.leads?.primary_email || '').trim()).filter(Boolean).join('\n');
+          navigator.clipboard.writeText(emails).then(() => {
+            const btn = footer.querySelector('.drilldown-copy-btn');
+            btn.textContent = '✓ Kopiert!';
+            setTimeout(() => { btn.textContent = 'Copy Emails'; }, 2000);
+          });
+        });
+      }
+
+    } catch (err) {
+      const list = popover.querySelector('.drilldown-list');
+      list.innerHTML = '<div class="drilldown-empty">Fehler beim Laden</div>';
+      console.error('❌ CR-Drilldown Fehler:', err);
+    }
+  }
+
   // === Wochen-Buckets (5 Wochen pro Monat) ===
   function getWeekBuckets(y, mIdx) {
     const dim = new Date(y, mIdx + 1, 0).getDate();
@@ -203,6 +514,30 @@
 
           td.appendChild(input);
 
+          // 🔥 Drilldown: intercept click on drillable fields with value > 0
+          if (DRILLABLE_FIELDS[col]) {
+            td.classList.add('drillable-cell');
+            // 🔒 Gesperrt: Doppelklick auf td öffnet Drilldown
+            td.addEventListener('dblclick', (e) => {
+              const isLocked = document.getElementById('tracker')?.classList.contains('tracking-locked');
+              if (!isLocked) return;
+              const raw = saved[input.dataset.key];
+              if (!raw || raw <= 0) return;
+              showDrilldown(td, col, d, activeFunnelId, y, mIdx);
+            });
+
+            // 🔓 Entsperrt: Mousedown auf Input öffnet Drilldown
+            td.addEventListener('mousedown', (e) => {
+              const isLocked = document.getElementById('tracker')?.classList.contains('tracking-locked');
+              if (isLocked) return;
+              if (e.target !== input) return;
+              const raw = saved[input.dataset.key];
+              if (!raw || raw <= 0) return;
+              e.preventDefault();
+              showDrilldown(td, col, d, activeFunnelId, y, mIdx);
+            });
+          }
+
           // 🔥 Setup Cell Selection (Google Sheets behavior)
           if (window.CellSelection) {
             window.CellSelection.setupCell(td, input);
@@ -212,6 +547,15 @@
           td.textContent = "–";
           td.classList.add("calc");
           td.dataset.key = `${col}_${d}`;
+
+          // 📉 CR-Drilldown: Doppelklick zeigt verlorene Leads
+          if (DRILLABLE_CR_FIELDS[col]) {
+            td.classList.add('drillable-cr-cell');
+            td.addEventListener('dblclick', () => {
+              if (td.textContent === '–') return;
+              showCRDrilldown(td, col, d, activeFunnelId, y, mIdx);
+            });
+          }
 
           // 🔥 Setup Cell Selection for KPI cells
           if (window.CellSelection) {
@@ -238,6 +582,12 @@
     // Zoom initialisieren
     if (typeof window.globalZoomInit === "function") {
       window.globalZoomInit();
+    }
+
+    // 🔒 Lock-State nach jedem Render neu anwenden
+    if (typeof window.applyLockState === 'function') {
+      const isLocked = localStorage.getItem('clarity_tracking_locked') !== 'false';
+      window.applyLockState(isLocked);
     }
 
     function setupRemainingCells() {

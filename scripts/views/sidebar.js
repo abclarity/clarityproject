@@ -78,6 +78,14 @@
             <span class="sidebar-icon">📊</span>
             <span class="sidebar-label">Trackingsheets</span>
           </button>
+          <button class="sidebar-item sidebar-item--coming-soon" data-view="projections">
+            <span class="sidebar-icon">🎯</span>
+            <span class="sidebar-label">Projections</span>
+          </button>
+          <button class="sidebar-item sidebar-item--coming-soon" data-view="scaleit">
+            <span class="sidebar-icon">🚀</span>
+            <span class="sidebar-label">Scale it</span>
+          </button>
         </nav>
         <div class="sidebar-footer">
           <div class="sidebar-user">
@@ -142,6 +150,9 @@
         document.getElementById('tabs').style.display = 'flex';
         document.getElementById('app-header').style.display = 'block';
 
+        const comingSoonView = document.getElementById('comingSoonView');
+        if (comingSoonView) comingSoonView.style.display = 'none';
+
         const datapoolView = document.getElementById('datapoolView');
         if (datapoolView) {
           datapoolView.style.display = 'none';
@@ -156,10 +167,36 @@
             window.switchToMonth(window.activeMonth.y, window.activeMonth.m);
           }, 10);
         }
+      } else if (view === 'projections' || view === 'scaleit') {
+        document.getElementById('app').style.display = 'none';
+        document.getElementById('tabs').style.display = 'none';
+        document.getElementById('app-header').style.display = 'none';
+        const datapoolView = document.getElementById('datapoolView');
+        if (datapoolView) datapoolView.style.display = 'none';
+
+        let comingSoonView = document.getElementById('comingSoonView');
+        if (!comingSoonView) {
+          comingSoonView = document.createElement('div');
+          comingSoonView.id = 'comingSoonView';
+          document.body.appendChild(comingSoonView);
+        }
+        const label = view === 'projections' ? 'Projections' : 'Scale it';
+        const icon = view === 'projections' ? '🎯' : '🚀';
+        comingSoonView.style.display = 'flex';
+        comingSoonView.innerHTML = `
+          <div style="text-align:center;">
+            <div style="font-size:64px; margin-bottom:24px;">${icon}</div>
+            <h2 style="font-size:28px; font-weight:700; color:#1a1a2e; margin-bottom:12px;">${label}</h2>
+            <p style="font-size:16px; color:#6b7280;">Kommt bald.</p>
+          </div>
+        `;
       } else if (view === 'datapool') {
         document.getElementById('app').style.display = 'none';
         document.getElementById('tabs').style.display = 'none';
         document.getElementById('app-header').style.display = 'none';
+
+        const comingSoonView = document.getElementById('comingSoonView');
+        if (comingSoonView) comingSoonView.style.display = 'none';
 
         let datapoolView = document.getElementById('datapoolView');
         if (!datapoolView) {

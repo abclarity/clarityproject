@@ -21,7 +21,7 @@
 }
 
 .integration-card:hover {
-  border-color: #3498db;
+  border-color: var(--primary);
   box-shadow: 0 4px 12px rgba(52, 152, 219, 0.15);
   transform: translateY(-2px);
 }
@@ -55,7 +55,7 @@
 }
 
 .integration-fills strong {
-  color: #3498db;
+  color: var(--primary);
 }
 
 .integration-card button {
@@ -139,12 +139,12 @@
 
 .btn-edit {
   background: white;
-  color: #3498db;
-  border-color: #3498db;
+  color: var(--primary);
+  border-color: var(--primary);
 }
 
 .btn-edit:hover {
-  background: #3498db;
+  background: var(--primary);
   color: white;
 }
 
@@ -234,7 +234,7 @@
 }
 
 .typeform-form-item:hover {
-  border-color: #3498db;
+  border-color: var(--primary);
 }
 
 .typeform-form-item strong {
@@ -274,7 +274,7 @@
 #typeform-setup-modal select:focus,
 #typeform-setup-modal input[type="text"]:focus {
   outline: none;
-  border-color: #3498db;
+  border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
 

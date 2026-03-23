@@ -511,6 +511,7 @@ function handleMouseDown(e) {
       }
 
       if (lastSelectedCell) {
+        const isLocked = document.getElementById('tracker')?.classList.contains('tracking-locked');
         if (e.key === 'ArrowUp') {
           e.preventDefault();
           navigateToCell('up');
@@ -524,8 +525,7 @@ function handleMouseDown(e) {
           e.preventDefault();
           navigateToCell('right');
         } else if (e.key === 'Enter') {
-          e.preventDefault();
-          enterEditMode(lastSelectedCell);
+          if (!isLocked) { e.preventDefault(); enterEditMode(lastSelectedCell); }
         } else if (e.key === 'Tab') {
           e.preventDefault();
           navigateToCell(e.shiftKey ? 'prev' : 'next');
@@ -533,14 +533,15 @@ function handleMouseDown(e) {
           e.preventDefault();
           copyCell();
         } else if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-          e.preventDefault();
-          pasteCell();
+          if (!isLocked) { e.preventDefault(); pasteCell(); }
         } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-          const input = lastSelectedCell.querySelector('input');
-          if (input) {
-            e.preventDefault();
-            enterEditMode(lastSelectedCell);
-            input.value = e.key;
+          if (!isLocked) {
+            const input = lastSelectedCell.querySelector('input');
+            if (input) {
+              e.preventDefault();
+              enterEditMode(lastSelectedCell);
+              input.value = e.key;
+            }
           }
         }
       }
@@ -555,9 +556,10 @@ function setupCell(td, input) {
   // Die Selektion wird NUR über globale mousedown/mousemove/mouseup gesteuert! 
 
   if (input) {
-    // Doppelklick → Edit Mode
+    // Doppelklick → Edit Mode (nur wenn nicht gesperrt)
     td.addEventListener('dblclick', (e) => {
-      e. preventDefault();
+      if (document.getElementById('tracker')?.classList.contains('tracking-locked')) return;
+      e.preventDefault();
       e.stopPropagation();
       enterEditMode(td);
     });
