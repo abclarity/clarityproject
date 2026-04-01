@@ -56,6 +56,9 @@ Deno.serve(async (req) => {
       case 'import_historical':
         return await handleHistoricalImport(supabase, userId, params.days || 30);
 
+      case 'sync_closing_termins':
+        return await handleSyncClosingTermins(supabase, userId);
+
       default:
         return jsonResponse({ error: `Unknown action: ${action}` }, 400);
     }
@@ -336,6 +339,84 @@ function suggestOutcomeMapping(outcome: { id: string; label: string }): Record<s
   return result;
 }
 
+// ── handleSyncClosingTermins ───────────────────────────────────────────────────
+// For every call_event with call_type=setting AND status=showed:
+// → find the lead by email → create a closingTermin event in the events table
+// Idempotent: skips if a closingTermin with the same close_activity_id already exists
+async function handleSyncClosingTermins(supabase: any, userId: string): Promise<Response> {
+  const { data: callEvents, error: ceError } = await supabase
+    .from('call_events')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('call_type', 'setting')
+    .eq('status', 'showed');
+
+  if (ceError) throw ceError;
+  if (!callEvents?.length) return jsonResponse({ success: true, created: 0, skipped: 0, errors: 0 });
+
+  let created = 0, skipped = 0, errors = 0;
+
+  for (const ce of callEvents) {
+    if (!ce.close_activity_id || !ce.lead_email) { skipped++; continue; }
+
+    // Dedup: check if closingTermin already exists for this close_activity_id
+    const { data: existing } = await supabase
+      .from('events')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('event_type', 'closingTermin')
+      .filter('metadata->>close_activity_id', 'eq', ce.close_activity_id)
+      .maybeSingle();
+
+    if (existing) { skipped++; continue; }
+
+    // Find lead by primary_email
+    const { data: lead } = await supabase
+      .from('leads')
+      .select('id, funnel_id')
+      .eq('user_id', userId)
+      .eq('primary_email', ce.lead_email)
+      .maybeSingle();
+
+    if (!lead) { skipped++; continue; }
+
+    // Position closingTermin just after the lead's closingBooking (so timeline order is correct)
+    // If no booking found, use appointment_date at noon to avoid midnight UTC → CET offset issues
+    const { data: booking } = await supabase
+      .from('events')
+      .select('event_date')
+      .eq('user_id', userId)
+      .eq('lead_id', lead.id)
+      .eq('event_type', 'closingBooking')
+      .order('event_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const eventDate = booking?.event_date
+      ? new Date(new Date(booking.event_date).getTime() + 60 * 1000).toISOString()
+      : `${ce.appointment_date || new Date().toISOString().split('T')[0]}T12:00:00.000Z`;
+
+    const { error } = await supabase.from('events').insert({
+      user_id: userId,
+      lead_id: lead.id,
+      event_type: 'closingTermin',
+      event_date: eventDate,
+      funnel_id: lead.funnel_id,
+      event_source: 'close_crm',
+      metadata: {
+        close_activity_id: ce.close_activity_id,
+        assigned_to: ce.assigned_to,
+      },
+    });
+
+    if (error) { errors++; console.error('❌ closingTermin insert error:', error.message); }
+    else created++;
+  }
+
+  console.log(`✅ sync_closing_termins done: ${created} created, ${skipped} skipped, ${errors} errors`);
+  return jsonResponse({ success: true, created, skipped, errors });
+}
+
 // ── handleHistoricalImport ─────────────────────────────────────────────────────
 // Fetches Close.io call activities for the last N days and creates call_events
 async function handleHistoricalImport(supabase: any, userId: string, days: number): Promise<Response> {
@@ -372,14 +453,16 @@ async function handleHistoricalImport(supabase: any, userId: string, days: numbe
   const sinceIso = since.toISOString();
 
   let imported = 0, skipped = 0, errors = 0;
+  let skipReasonNoOutcome = 0, skipReasonNoMapping = 0, skipReasonNoEmail = 0, skipReasonDuplicate = 0;
   const leadEmailCache = new Map<string, string>();
-  let cursor: string | null = null;
+  let skip = 0;
   let pages = 0;
 
+  console.log(`📥 Starting historical import: last ${days} days, since ${sinceIso}`);
+  console.log(`📋 Loaded ${mappings.length} outcome mappings:`, mappings.map((m: any) => m.close_outcome_id));
+
   do {
-    const url = cursor
-      ? `/activity/call/?_limit=100&date_created__gt=${encodeURIComponent(sinceIso)}&_cursor=${encodeURIComponent(cursor)}`
-      : `/activity/call/?_limit=100&date_created__gt=${encodeURIComponent(sinceIso)}`;
+    const url = `/activity/call/?_limit=100&_skip=${skip}&date_created__gt=${encodeURIComponent(sinceIso)}`;
 
     const res = await closeApiGet(url, conn.api_key);
     if (!res.ok) {
@@ -390,12 +473,20 @@ async function handleHistoricalImport(supabase: any, userId: string, days: numbe
     const data = await res.json();
     const calls: any[] = data.data || [];
 
+    console.log(`Page ${pages + 1} (skip=${skip}): ${calls.length} calls fetched`);
+    if (pages === 0 && calls[0]) {
+      const s = calls[0];
+      console.log(`Sample call — outcome_id: "${s.outcome_id}" | disposition: "${s.disposition}" | lead_id: "${s.lead_id}"`);
+    }
+
+    if (calls.length === 0) break;
+
     for (const call of calls) {
       const outcomeId: string | null = call.outcome_id || null;
-      if (!outcomeId) { skipped++; continue; }
+      if (!outcomeId) { skipped++; skipReasonNoOutcome++; continue; }
 
       const mapping = mappingMap.get(outcomeId);
-      if (!mapping?.clarity_status) { skipped++; continue; }
+      if (!mapping?.clarity_status) { skipped++; skipReasonNoMapping++; continue; }
 
       // Resolve lead email (cached per lead_id)
       const leadId: string = call.lead_id;
@@ -405,13 +496,16 @@ async function handleHistoricalImport(supabase: any, userId: string, days: numbe
           const leadRes = await closeApiGet(`/lead/${leadId}/`, conn.api_key);
           if (leadRes.ok) {
             const leadData = await leadRes.json();
-            leadEmail = leadData.contacts?.[0]?.emails?.[0]?.address || '';
+            for (const contact of (leadData.contacts || [])) {
+              const addr = contact.emails?.[0]?.email || '';
+              if (addr) { leadEmail = addr; break; }
+            }
             if (leadEmail) leadEmailCache.set(leadId, leadEmail);
           }
         } catch (_) { /* non-fatal */ }
       }
 
-      if (!leadEmail) { skipped++; continue; }
+      if (!leadEmail) { skipped++; skipReasonNoEmail++; continue; }
 
       // Determine assigned_to based on call_type and field mapping config
       let assignedTo: string | null = null;
@@ -421,12 +515,10 @@ async function handleHistoricalImport(supabase: any, userId: string, days: numbe
         (callType === 'closing' && (!closerMapping || closerMapping.close_field_id === '__close_user__'));
       if (useCloseUser) assignedTo = call.user_name || null;
 
-      // Appointment date: use the actual call date (date_created or duration start)
       const appointmentDate: string | null = call.date_created
         ? call.date_created.split('T')[0]
         : null;
 
-      // Insert — skip silently if already exists (close_activity_id unique index)
       const { error } = await supabase.from('call_events').insert({
         user_id: userId,
         lead_email: leadEmail,
@@ -441,7 +533,7 @@ async function handleHistoricalImport(supabase: any, userId: string, days: numbe
 
       if (error) {
         if (error.code === '23505') {
-          skipped++; // already imported (duplicate)
+          skipped++; skipReasonDuplicate++;
         } else {
           errors++;
           console.error('❌ call_event insert error:', error.message, '| call:', call.id);
@@ -451,11 +543,11 @@ async function handleHistoricalImport(supabase: any, userId: string, days: numbe
       }
     }
 
-    cursor = data.cursor_next || null;
+    skip += calls.length;
     pages++;
-  } while (cursor && pages < 100); // max 10.000 calls
+  } while (pages < 100); // stop after 10.000 calls max
 
-  console.log(`✅ Close.io historical import done: ${imported} imported, ${skipped} skipped, ${errors} errors`);
+  console.log(`✅ Close.io historical import done: ${imported} imported, ${skipped} skipped (no_outcome=${skipReasonNoOutcome}, no_mapping=${skipReasonNoMapping}, no_email=${skipReasonNoEmail}, duplicate=${skipReasonDuplicate}), ${errors} errors`);
   return jsonResponse({ success: true, imported, skipped, errors, days });
 }
 

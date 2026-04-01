@@ -108,7 +108,7 @@
           </div>
 
           <!-- Historical Import -->
-          <div style="background:#f8f9fa;border:1px solid #e9ecef;border-radius:8px;padding:14px;">
+          <div style="background:#f8f9fa;border:1px solid #e9ecef;border-radius:8px;padding:14px;margin-bottom:8px;">
             <div style="font-size:13px;font-weight:600;margin-bottom:4px;">📥 Rückwirkend importieren</div>
             <div style="font-size:12px;color:#666;margin-bottom:10px;">
               Importiert Close.io Calls der letzten N Tage als Call-Events. Bereits importierte Calls werden übersprungen.
@@ -119,6 +119,16 @@
               <button class="btn-secondary" style="font-size:12px;padding:6px 14px;" onclick="window.CloseAPI.importHistorical(180)">180 Tage</button>
             </div>
             <div id="closeio-import-status" style="margin-top:8px;font-size:12px;color:#666;"></div>
+          </div>
+
+          <!-- Closing Termine sync -->
+          <div style="background:#f8f9fa;border:1px solid #e9ecef;border-radius:8px;padding:14px;">
+            <div style="font-size:13px;font-weight:600;margin-bottom:4px;">🎯 Closing Termine anlegen</div>
+            <div style="font-size:12px;color:#666;margin-bottom:10px;">
+              Legt für alle qualifizierten Setting Calls (Setter hat Lead qualifiziert) einen Closing Termin im Datenpool an.
+            </div>
+            <button class="btn-secondary" style="font-size:12px;padding:6px 14px;" onclick="window.CloseAPI.syncClosingTermins()">Closing Termine synchronisieren</button>
+            <div id="closeio-termins-status" style="margin-top:8px;font-size:12px;color:#666;"></div>
           </div>
 
           <div id="closeio-mapping-summary" style="margin-top:1rem;"></div>
@@ -148,6 +158,28 @@
         console.error('❌ Close.io connect fehlgeschlagen:', err);
         window.Toast.error('Verbindung fehlgeschlagen: ' + (err.message || 'Ungültiger API Key'));
         if (btn) { btn.disabled = false; btn.textContent = '🔗 Verbinden'; }
+      }
+    },
+
+    // ── Sync Closing Termins ───────────────────────────────────────────────────
+    async syncClosingTermins() {
+      const statusEl = document.getElementById('closeio-termins-status');
+      const btn = document.querySelector('#closeio-content button[onclick*="syncClosingTermins"]');
+      if (statusEl) statusEl.innerHTML = `<span style="color:#1877f2;">⏳ Wird synchronisiert…</span>`;
+      if (btn) btn.disabled = true;
+
+      try {
+        const result = await this._callSync({ action: 'sync_closing_termins' });
+        const msg = `✅ ${result.created} Closing Termine angelegt · ${result.skipped} übersprungen${result.errors ? ` · ${result.errors} Fehler` : ''}`;
+        if (statusEl) statusEl.innerHTML = `<span style="color:#16a34a;">${msg}</span>`;
+        if (result.created > 0) window.Toast.success(`${result.created} Closing Termine im Datenpool angelegt`);
+        else window.Toast.success('Sync abgeschlossen — keine neuen Closing Termine.');
+      } catch (err) {
+        console.error('❌ Close.io syncClosingTermins fehlgeschlagen:', err);
+        if (statusEl) statusEl.innerHTML = `<span style="color:#dc2626;">❌ Fehler: ${err.message}</span>`;
+        window.Toast.error('Sync fehlgeschlagen: ' + (err.message || 'Unbekannter Fehler'));
+      } finally {
+        if (btn) btn.disabled = false;
       }
     },
 

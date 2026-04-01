@@ -270,6 +270,43 @@ async function handleCallActivity(
 
   console.log(`✅ call_event ${callEvent.id} updated: status=${mapping.clarity_status}, outcome=${mapping.clarity_outcome}`);
 
+  // Setting call + showed → create closingTermin event in events table
+  const finalCallType = callEvent?.call_type || mapping.clarity_call_type;
+  if (finalCallType === 'setting' && mapping.clarity_status === 'showed' && closeActivityId) {
+    const { data: existingTermin } = await supabase
+      .from('events')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('event_type', 'closingTermin')
+      .filter('metadata->>close_activity_id', 'eq', closeActivityId)
+      .maybeSingle();
+
+    if (!existingTermin && clarityLeadId) {
+      const { data: lead } = await supabase
+        .from('leads').select('funnel_id').eq('id', clarityLeadId).maybeSingle();
+
+      const { data: booking } = await supabase
+        .from('events').select('event_date')
+        .eq('user_id', userId).eq('lead_id', clarityLeadId).eq('event_type', 'closingBooking')
+        .order('event_date', { ascending: false }).limit(1).maybeSingle();
+
+      const terminDate = booking?.event_date
+        ? new Date(new Date(booking.event_date).getTime() + 60 * 1000).toISOString()
+        : `${callEvent.appointment_date || new Date().toISOString().split('T')[0]}T12:00:00.000Z`;
+
+      await supabase.from('events').insert({
+        user_id: userId,
+        lead_id: clarityLeadId,
+        event_type: 'closingTermin',
+        event_date: terminDate,
+        funnel_id: lead?.funnel_id || null,
+        event_source: 'close_crm',
+        metadata: { close_activity_id: closeActivityId, assigned_to: update.assigned_to || null },
+      });
+      console.log('✅ Created closingTermin event for setting+showed call');
+    }
+  }
+
   // If this disposition should also create a new closing call_event
   if (mapping.also_creates_closing_event && mapping.clarity_status === 'showed') {
     await supabase

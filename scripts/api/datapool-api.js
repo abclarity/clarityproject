@@ -2553,7 +2553,14 @@
           attribution = attrData || null;
         }
 
-        this.showLeadDetailModal(lead, events || [], attribution);
+        // Load call_events for this lead (Close.io setting + closing calls)
+        const { data: callEvents } = await window.SupabaseClient
+          .from('call_events')
+          .select('*')
+          .eq('lead_email', lead.primary_email)
+          .order('appointment_date', { ascending: false });
+
+        this.showLeadDetailModal(lead, events || [], attribution, callEvents || []);
       } catch (err) {
         console.error('❌ Error opening lead detail:', err);
         if (window.Toast) {
@@ -2562,7 +2569,7 @@
       }
     },
 
-    showLeadDetailModal(lead, events, attribution = null) {
+    showLeadDetailModal(lead, events, attribution = null, callEvents = []) {
       const existingModal = document.getElementById('leadDetailModal');
       if (existingModal) existingModal.remove();
 
@@ -2584,10 +2591,10 @@
           (lead.metadata.typeform_answers && Object.keys(lead.metadata.typeform_answers).length > 0)
         ));
 
-      // Check if there are any closing call bookings
+      // Check if there are any closing call bookings or Close.io call_events
       const hasClosingCallData = events.some(e =>
         e.event_type === 'closingBooking' || e.event_type === 'closingTermin' || e.event_type === 'closingCall'
-      );
+      ) || callEvents.length > 0;
 
       const hasExtraTabs = hasSurveyData || hasClosingCallData;
 
@@ -2642,7 +2649,7 @@
               </div>
               <div class="lead-timeline">
                 <h3>Timeline</h3>
-                ${this.renderTimelineWithoutSurvey(events, attribution)}
+                ${this.renderTimelineWithoutSurvey(events, attribution, callEvents)}
               </div>
             </div>
 
@@ -2653,7 +2660,7 @@
             ` : ''}
             ${hasClosingCallData ? `
               <div id="closingTab" class="lead-tab-content">
-                ${this.renderClosingCallDetails(events)}
+                ${this.renderClosingCallDetails(events, callEvents)}
               </div>
             ` : ''}
           </div>
@@ -2692,8 +2699,8 @@
       }, 0);
     },
 
-    renderTimelineWithoutSurvey(events, attribution = null) {
-      if (!events || events.length === 0) {
+    renderTimelineWithoutSurvey(events, attribution = null, callEvents = []) {
+      if ((!events || events.length === 0) && callEvents.length === 0) {
         return '<div class="timeline-empty">Keine Events vorhanden</div>';
       }
 
@@ -2711,48 +2718,71 @@
         unit: '💰 Unit'
       };
 
-      const eventItems = events.map(event => {
-        const eventDateTime = new Date(event.event_date);
-        const date = eventDateTime.toLocaleDateString('de-DE');
-        const time = eventDateTime.toLocaleTimeString('de-DE', {
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-        const label = eventLabels[event.event_type] || event.event_type;
-        const revenue = event.revenue > 0 ? ` - ${event.revenue.toFixed(2)} €` : '';
+      // Map call_event status → readable label for timeline
+      const callStatusLabels = {
+        showed:      { setting: '☎️ Setting Call – Qualifiziert', closing: '📞 Closing Call – Stattgefunden' },
+        no_show:     { setting: '🚫 Setting Call – No Show',      closing: '🚫 Closing Call – No Show' },
+        canceled:    { setting: '❌ Setting Call – Abgesagt',     closing: '❌ Closing Call – Abgesagt' },
+        disqualified:{ setting: '🔴 Setting Call – Disqualifiziert', closing: '🔴 Closing Call – Disqualifiziert' },
+        scheduled:   { setting: '📆 Setting Call – Geplant',     closing: '📆 Closing Call – Geplant' },
+      };
 
-        return `
+      // Build timeline entries from events table
+      const allItems = (events || []).map(event => {
+        const ts = new Date(event.event_date).getTime();
+        const label = eventLabels[event.event_type] || event.event_type;
+        const revenue = event.revenue > 0 ? ` – ${event.revenue.toFixed(2)} €` : '';
+        const html = `
           <div class="timeline-item">
-            <div class="timeline-date">${date} ${time}</div>
+            <div class="timeline-date">${new Date(event.event_date).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</div>
             <div class="timeline-content">
               <div class="timeline-label">${label}</div>
-              <div class="timeline-details">
-                Funnel: ${event.funnel_id || '-'} | Quelle: ${event.source || '-'}${revenue}
-              </div>
+              <div class="timeline-details">Funnel: ${event.funnel_id || '-'} | Quelle: ${event.source || '-'}${revenue}</div>
             </div>
-          </div>
-        `;
+          </div>`;
+        return { ts, html };
       });
 
-      // Ad-Click-Eintrag: 2 Min vor dem frühesten Event (Events sind absteigend sortiert → letztes = frühestes)
-      if (attribution && attribution.ad_name) {
-        const earliestEvent = events[events.length - 1];
-        const clickTime = new Date(new Date(earliestEvent.event_date).getTime() - 2 * 60 * 1000);
-        const date = clickTime.toLocaleDateString('de-DE');
-        const time = clickTime.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-
-        eventItems.push(`
-          <div class="timeline-item timeline-item-ad-click">
-            <div class="timeline-date">${date} ${time}</div>
+      // Add call_events to timeline (skip setting+showed — already represented by closingTermin event)
+      for (const ce of (callEvents || [])) {
+        if (ce.call_type === 'setting' && ce.status === 'showed') continue; // closingTermin covers this
+        const date = ce.appointment_date ? new Date(ce.appointment_date) : null;
+        if (!date) continue;
+        const labels = callStatusLabels[ce.status] || {};
+        const label = labels[ce.call_type] || `📞 ${ce.call_type} – ${ce.status}`;
+        const detail = ce.assigned_to ? `Bearbeitet von: ${ce.assigned_to}` : 'Close.io';
+        const html = `
+          <div class="timeline-item" style="border-left:3px solid #e9ecef;padding-left:8px;">
+            <div class="timeline-date">${date.toLocaleDateString('de-DE')}</div>
             <div class="timeline-content">
-              <div class="timeline-label">🖱️ Auf Ad geklickt</div>
-              <div class="timeline-details timeline-ad-name">${attribution.ad_name}</div>
+              <div class="timeline-label">${label}</div>
+              <div class="timeline-details">${detail}</div>
             </div>
-          </div>
-        `);
+          </div>`;
+        allItems.push({ ts: date.getTime(), html });
       }
 
-      return eventItems.join('');
+      // Sort descending by timestamp
+      allItems.sort((a, b) => b.ts - a.ts);
+
+      // Ad-Click entry (2 min before earliest)
+      if (attribution && attribution.ad_name && allItems.length > 0) {
+        const earliest = allItems[allItems.length - 1].ts;
+        const clickTime = new Date(earliest - 2 * 60 * 1000);
+        allItems.push({
+          ts: clickTime.getTime(),
+          html: `
+            <div class="timeline-item timeline-item-ad-click">
+              <div class="timeline-date">${clickTime.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</div>
+              <div class="timeline-content">
+                <div class="timeline-label">🖱️ Auf Ad geklickt</div>
+                <div class="timeline-details timeline-ad-name">${attribution.ad_name}</div>
+              </div>
+            </div>`
+        });
+      }
+
+      return allItems.map(i => i.html).join('');
     },
 
     renderSurveyAnswers(lead, events) {
@@ -2888,9 +2918,10 @@
       return html;
     },
 
-    renderClosingCallDetails(events) {
+    renderClosingCallDetails(events, callEvents = []) {
+      // Only show Calendly bookings — closingTermin from close_crm is shown in the Close.io section below
       const closingEvents = events.filter(e =>
-        e.event_type === 'closingBooking' || e.event_type === 'closingTermin' || e.event_type === 'closingCall'
+        e.event_type === 'closingBooking' && e.event_source !== 'close_crm'
       );
 
       if (closingEvents.length === 0) {
@@ -2903,23 +2934,18 @@
         closingCall:    { icon: '📞', label: 'Closing Call' }
       };
 
-      return closingEvents.map(event => {
+      const calendarySections = closingEvents.map(event => {
         const meta = event.metadata || {};
         const { icon, label } = eventLabels[event.event_type] || { icon: '📅', label: event.event_type };
 
-        // When was the call booked?
         const bookedAt = meta.booking_created_at || event.event_date;
-        const bookedDate = new Date(bookedAt);
-        const bookedStr = bookedDate.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
+        const bookedStr = new Date(bookedAt).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
 
-        // When is the call scheduled?
         let scheduledStr = '-';
         if (meta.call_scheduled_time) {
-          const scheduledDate = new Date(meta.call_scheduled_time);
-          scheduledStr = scheduledDate.toLocaleString('de-DE', { dateStyle: 'full', timeStyle: 'short' });
+          scheduledStr = new Date(meta.call_scheduled_time).toLocaleString('de-DE', { dateStyle: 'full', timeStyle: 'short' });
         }
 
-        // Booking answers (from Calendly form)
         let bookingAnswersItems = '';
         if (meta.booking_answers && Object.keys(meta.booking_answers).length > 0) {
           Object.entries(meta.booking_answers).forEach(([question, answer]) => {
@@ -2928,8 +2954,7 @@
               <div class="survey-answer-item">
                 <div class="survey-question">${question}</div>
                 <div class="survey-answer">${answer}</div>
-              </div>
-            `;
+              </div>`;
           });
         }
 
@@ -2951,9 +2976,55 @@
                 <div class="survey-answer">${bookedStr}</div>
               </div>
             </div>
-          </div>
-        `;
+          </div>`;
       }).join('');
+
+      // Close.io call history
+      const callStatusConfig = {
+        showed:       { setting: { icon: '✅', label: 'Setting Call – Qualifiziert' },   closing: { icon: '✅', label: 'Closing Call – Stattgefunden' } },
+        no_show:      { setting: { icon: '🚫', label: 'Setting Call – No Show' },        closing: { icon: '🚫', label: 'Closing Call – No Show' } },
+        canceled:     { setting: { icon: '❌', label: 'Setting Call – Abgesagt' },       closing: { icon: '❌', label: 'Closing Call – Abgesagt' } },
+        disqualified: { setting: { icon: '🔴', label: 'Setting Call – Disqualifiziert' },closing: { icon: '🔴', label: 'Closing Call – Disqualifiziert' } },
+        scheduled:    { setting: { icon: '📆', label: 'Setting Call – Geplant' },        closing: { icon: '📆', label: 'Closing Call – Geplant' } },
+      };
+
+      let closeSection = '';
+      if (callEvents.length > 0) {
+        // Show oldest first: Setting Call → Closing Call Geplant → Closing Call Stattgefunden
+        const sortedCalls = [...callEvents].sort((a, b) => {
+          const da = a.appointment_date || '';
+          const db = b.appointment_date || '';
+          if (da !== db) return da < db ? -1 : 1;
+          // Same date: setting before closing
+          if (a.call_type !== b.call_type) return a.call_type === 'setting' ? -1 : 1;
+          // Same type: scheduled before showed
+          const order = { scheduled: 0, showed: 1, no_show: 1, canceled: 1, disqualified: 1 };
+          return (order[a.status] ?? 2) - (order[b.status] ?? 2);
+        });
+        const rows = sortedCalls.map(ce => {
+          const cfg = (callStatusConfig[ce.status] || {})[ce.call_type] || { icon: '📞', label: `${ce.call_type} – ${ce.status}` };
+          const dateStr = ce.appointment_date ? new Date(ce.appointment_date).toLocaleDateString('de-DE') : '-';
+          return `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f0f0f0;">
+              <span style="font-size:16px;">${cfg.icon}</span>
+              <div style="flex:1;">
+                <div style="font-size:13px;font-weight:600;">${cfg.label}</div>
+                <div style="font-size:12px;color:#888;">${dateStr}${ce.assigned_to ? ` · ${ce.assigned_to}` : ''}</div>
+              </div>
+            </div>`;
+        }).join('');
+
+        closeSection = `
+          <div class="survey-section" style="margin-top:16px;">
+            <div class="survey-section-header">
+              <span class="survey-icon">📞</span>
+              <span class="survey-event-type">Close.io Anrufe</span>
+            </div>
+            <div style="padding:0 4px;">${rows}</div>
+          </div>`;
+      }
+
+      return (calendarySections || '') + closeSection;
     },
 
     // ============================================
