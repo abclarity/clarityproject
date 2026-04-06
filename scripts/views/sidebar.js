@@ -82,7 +82,7 @@
             <span class="sidebar-icon">🎯</span>
             <span class="sidebar-label">Projections</span>
           </button>
-          <button class="sidebar-item sidebar-item--coming-soon" data-view="scaleit">
+          <button class="sidebar-item" data-view="scaleit">
             <span class="sidebar-icon">🚀</span>
             <span class="sidebar-label">Scale it</span>
           </button>
@@ -154,9 +154,10 @@
         if (comingSoonView) comingSoonView.style.display = 'none';
 
         const datapoolView = document.getElementById('datapoolView');
-        if (datapoolView) {
-          datapoolView.style.display = 'none';
-        }
+        if (datapoolView) datapoolView.style.display = 'none';
+
+        const scaleItView = document.getElementById('scaleItView');
+        if (scaleItView) scaleItView.style.display = 'none';
 
         // 🔥 Force reload if Facebook sync just completed
         if (window._facebookSyncJustCompleted && window.activeMonth && window.switchToMonth) {
@@ -167,12 +168,14 @@
             window.switchToMonth(window.activeMonth.y, window.activeMonth.m);
           }, 10);
         }
-      } else if (view === 'projections' || view === 'scaleit') {
+      } else if (view === 'projections') {
         document.getElementById('app').style.display = 'none';
         document.getElementById('tabs').style.display = 'none';
         document.getElementById('app-header').style.display = 'none';
         const datapoolView = document.getElementById('datapoolView');
         if (datapoolView) datapoolView.style.display = 'none';
+        const scaleItView = document.getElementById('scaleItView');
+        if (scaleItView) scaleItView.style.display = 'none';
 
         let comingSoonView = document.getElementById('comingSoonView');
         if (!comingSoonView) {
@@ -180,16 +183,35 @@
           comingSoonView.id = 'comingSoonView';
           document.body.appendChild(comingSoonView);
         }
-        const label = view === 'projections' ? 'Projections' : 'Scale it';
-        const icon = view === 'projections' ? '🎯' : '🚀';
         comingSoonView.style.display = 'flex';
         comingSoonView.innerHTML = `
           <div style="text-align:center;">
-            <div style="font-size:64px; margin-bottom:24px;">${icon}</div>
-            <h2 style="font-size:28px; font-weight:700; color:#1a1a2e; margin-bottom:12px;">${label}</h2>
+            <div style="font-size:64px; margin-bottom:24px;">🎯</div>
+            <h2 style="font-size:28px; font-weight:700; color:#1a1a2e; margin-bottom:12px;">Projections</h2>
             <p style="font-size:16px; color:#6b7280;">Kommt bald.</p>
           </div>
         `;
+      } else if (view === 'scaleit') {
+        document.getElementById('app').style.display = 'none';
+        document.getElementById('tabs').style.display = 'none';
+        document.getElementById('app-header').style.display = 'none';
+        const datapoolView = document.getElementById('datapoolView');
+        if (datapoolView) datapoolView.style.display = 'none';
+        const comingSoonView = document.getElementById('comingSoonView');
+        if (comingSoonView) comingSoonView.style.display = 'none';
+
+        let scaleItView = document.getElementById('scaleItView');
+        if (!scaleItView) {
+          scaleItView = document.createElement('div');
+          scaleItView.id = 'scaleItView';
+          scaleItView.style.cssText = 'flex: 1; overflow-y: auto; background: #f6f7f9;';
+          document.body.appendChild(scaleItView);
+        }
+        scaleItView.style.display = 'block';
+
+        if (window.ScaleView) {
+          window.ScaleView.render(null, scaleItView);
+        }
       } else if (view === 'datapool') {
         document.getElementById('app').style.display = 'none';
         document.getElementById('tabs').style.display = 'none';

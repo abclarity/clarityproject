@@ -193,10 +193,13 @@
 
       try {
         const result = await this._callSync({ action: 'import_historical', days });
-        const msg = `✅ ${result.imported} importiert · ${result.skipped} übersprungen${result.errors ? ` · ${result.errors} Fehler` : ''}`;
+        const terminInfo = result.closing_termins
+          ? ` · ✅ ${result.closing_termins.created} Closing Termine`
+          : '';
+        const msg = `✅ ${result.imported} importiert · ${result.skipped} übersprungen${terminInfo}${result.errors ? ` · ${result.errors} Fehler` : ''}`;
         if (statusEl) statusEl.innerHTML = `<span style="color:#16a34a;">${msg}</span>`;
-        if (result.imported > 0) window.Toast.success(`Close.io Import: ${result.imported} Call-Events importiert`);
-        else window.Toast.success('Import abgeschlossen — keine neuen Calls gefunden.');
+        if (result.imported > 0) window.Toast.success(`Close.io Import: ${result.imported} Calls · ${result.closing_termins?.created || 0} Closing Termine`);
+        else window.Toast.success('Import abgeschlossen — keine neuen Calls.');
       } catch (err) {
         console.error('❌ Close.io historical import fehlgeschlagen:', err);
         if (statusEl) statusEl.innerHTML = `<span style="color:#dc2626;">❌ Fehler: ${err.message}</span>`;

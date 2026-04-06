@@ -530,6 +530,20 @@
   window.switchToFunnel = switchToFunnel;
   window.applyLockState = applyLockState;
 
+  // === Switch to Scale IT ===
+  window.switchToScaleIt = function(section) {
+    activeView = "scale";
+    activeMonth = null;
+
+    if (window.ScaleView) {
+      window.ScaleView.render(section || null);
+    }
+
+    renderTabs(null);
+
+    localStorage.setItem("vsl_last_active", JSON.stringify({ type: "scale", section: section || "ads" }));
+  };
+
   // === Switch to Month ===
   window.switchToMonth = async function(y, mIdx) {
     const funnels = FunnelAPI.loadFunnels();
@@ -692,6 +706,14 @@
     dash.addEventListener("click", () => switchToYear(activeYear));
     dash.classList.toggle("active", activeView === "year");
     tabsEl.appendChild(dash);
+
+    const scaleTab = document.createElement("button");
+    scaleTab.id = "scaleTab";
+    scaleTab.className = "tab tab-scale";
+    scaleTab.textContent = "Scale It";
+    scaleTab.addEventListener("click", () => window.switchToScaleIt());
+    scaleTab.classList.toggle("active", activeView === "scale");
+    tabsEl.appendChild(scaleTab);
 
     const sep = document.createElement("div");
     sep.className = "tab-separator";
@@ -1185,7 +1207,9 @@
 
     if (last) {
       const obj = JSON.parse(last);
-      if (obj.type === "year") {
+      if (obj.type === "scale") {
+        window.switchToScaleIt(obj.section);
+      } else if (obj.type === "year") {
         await switchToYear(obj.y);
       } else {
         await switchToMonth(obj.y, obj.m);

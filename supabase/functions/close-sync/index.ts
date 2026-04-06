@@ -548,7 +548,19 @@ async function handleHistoricalImport(supabase: any, userId: string, days: numbe
   } while (pages < 100); // stop after 10.000 calls max
 
   console.log(`✅ Close.io historical import done: ${imported} imported, ${skipped} skipped (no_outcome=${skipReasonNoOutcome}, no_mapping=${skipReasonNoMapping}, no_email=${skipReasonNoEmail}, duplicate=${skipReasonDuplicate}), ${errors} errors`);
-  return jsonResponse({ success: true, imported, skipped, errors, days });
+
+  // Auto-sync closing termins after import
+  let terminResult = { created: 0, skipped: 0, errors: 0 };
+  try {
+    const terminRes = await handleSyncClosingTermins(supabase, userId);
+    const terminData = await terminRes.json();
+    terminResult = { created: terminData.created || 0, skipped: terminData.skipped || 0, errors: terminData.errors || 0 };
+    console.log(`✅ Auto-sync closing termins: ${terminResult.created} created, ${terminResult.skipped} skipped`);
+  } catch (err) {
+    console.error('❌ Auto-sync closing termins failed (non-fatal):', err);
+  }
+
+  return jsonResponse({ success: true, imported, skipped, errors, days, closing_termins: terminResult });
 }
 
 // ── Close.io API Helpers ───────────────────────────────────────────────────────

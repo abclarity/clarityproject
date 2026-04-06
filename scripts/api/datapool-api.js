@@ -2747,11 +2747,28 @@
         return { ts, html };
       });
 
-      // Add call_events to timeline (skip setting+showed — already represented by closingTermin event)
+      // Add call_events to timeline
       for (const ce of (callEvents || [])) {
         if (ce.call_type === 'setting' && ce.status === 'showed') continue; // closingTermin covers this
+        if (ce.status === 'rescheduled') continue; // covered by the new call_event's reschedule entry
+
         const date = ce.appointment_date ? new Date(ce.appointment_date) : null;
         if (!date) continue;
+
+        // Reschedule entry (Option B): call_event that was created by a reschedule
+        if (ce.rescheduled_from_id) {
+          const html = `
+            <div class="timeline-item" style="border-left:3px solid #f59e0b;padding-left:8px;">
+              <div class="timeline-date">${date.toLocaleDateString('de-DE')}</div>
+              <div class="timeline-content">
+                <div class="timeline-label">🔄 Termin Umgebucht → ${date.toLocaleDateString('de-DE')}</div>
+                <div class="timeline-details">Calendly</div>
+              </div>
+            </div>`;
+          allItems.push({ ts: date.getTime(), html });
+          continue;
+        }
+
         const labels = callStatusLabels[ce.status] || {};
         const label = labels[ce.call_type] || `📞 ${ce.call_type} – ${ce.status}`;
         const detail = ce.assigned_to ? `Bearbeitet von: ${ce.assigned_to}` : 'Close.io';

@@ -1,0 +1,168 @@
+/* ============================================
+   SCALE IT — View Styles
+   ============================================ */
+
+.scale-view {
+  padding: 32px 40px 100px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* Page Header */
+.scale-header {
+  margin-bottom: 32px;
+}
+
+.scale-header h1 {
+  font-size: 26px;
+  font-weight: 700;
+  color: #111;
+  margin: 0 0 6px;
+  letter-spacing: -0.3px;
+}
+
+.scale-header p {
+  font-size: 14px;
+  color: #777;
+  margin: 0;
+}
+
+/* Sub-Navigation */
+.scale-subnav {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 0;
+}
+
+.scale-subnav-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  margin-bottom: -1px;
+  border-radius: 0;
+}
+
+.scale-subnav-btn:hover {
+  color: #111;
+}
+
+.scale-subnav-btn.active {
+  color: #111;
+  border-bottom-color: #111;
+  font-weight: 600;
+}
+
+/* Section Content */
+.scale-section {
+  display: none;
+}
+
+.scale-section.active {
+  display: block;
+}
+
+/* Section Title */
+.scale-section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #222;
+  margin: 0 0 6px;
+}
+
+.scale-section-subtitle {
+  font-size: 13px;
+  color: #888;
+  margin: 0 0 24px;
+}
+
+/* Cards Grid */
+.scale-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+/* Optimization Card */
+.scale-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.scale-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.07);
+  border-color: #d0d5dd;
+}
+
+.scale-card-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.scale-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111;
+  margin: 0;
+}
+
+.scale-card-desc {
+  font-size: 13px;
+  color: #666;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.scale-card-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 20px;
+  align-self: flex-start;
+}
+
+.scale-card-badge.badge-soon {
+  background: #f3f4f6;
+  color: #888;
+}
+
+.scale-card-badge.badge-active {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.scale-card-badge.badge-new {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+/* Coming Soon placeholder */
+.scale-coming-soon {
+  text-align: center;
+  padding: 60px 20px;
+  color: #aaa;
+}
+
+.scale-coming-soon .scale-coming-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+
+.scale-coming-soon p {
+  font-size: 15px;
+  margin: 0;
+}

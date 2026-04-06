@@ -532,6 +532,9 @@
             <button class="btn btn-secondary" onclick="window.CalendlyAPI.importPastBookings()">
               ⬇️ Vergangene Bookings importieren
             </button>
+            <button class="btn btn-secondary" onclick="window.CalendlyAPI.importRescheduleHistory()">
+              🔄 Reschedule-Kalender importieren
+            </button>
             <button class="btn btn-secondary" onclick="window.CalendlyAPI.manualSyncToTracking()">
               📊 Sync zu Tracking Sheets
             </button>
@@ -832,6 +835,98 @@
             <div style="font-size:0.85rem; color:var(--gray-600);">${err.message}</div>
           </div>
         `;
+      }
+    },
+
+    // ==================== IMPORT RESCHEDULE HISTORY ====================
+    async importRescheduleHistory() {
+      const existing = document.getElementById('calendly-reschedule-import-modal');
+      if (existing) existing.remove();
+
+      const modal = document.createElement('div');
+      modal.id = 'calendly-reschedule-import-modal';
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal-content" style="max-width:480px;">
+          <div class="modal-header">
+            <h2>🔄 Reschedule-Kalender importieren</h2>
+            <button class="modal-close" onclick="document.getElementById('calendly-reschedule-import-modal').remove()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p style="color:var(--gray-600);margin-bottom:1.5rem;font-size:0.9rem;">
+              Importiert historische Umbuchungen aus dem Reschedule-Kalender.<br>
+              Kein neues Closing Booking wird angelegt — nur der Termin wird aktualisiert.
+            </p>
+            <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+              <button class="btn btn-secondary" onclick="window.CalendlyAPI._runRescheduleImport(30)">30 Tage</button>
+              <button class="btn btn-secondary" onclick="window.CalendlyAPI._runRescheduleImport(90)">90 Tage</button>
+              <button class="btn btn-secondary" onclick="window.CalendlyAPI._runRescheduleImport(180)">180 Tage</button>
+            </div>
+            <div id="reschedule-import-progress" style="display:none;padding:0.75rem;background:#f0f9ff;border-radius:8px;font-size:0.85rem;color:#0369a1;">
+              ⏳ Import läuft…
+            </div>
+            <div id="reschedule-import-result" style="display:none;"></div>
+          </div>
+        </div>`;
+      document.body.appendChild(modal);
+    },
+
+    async _runRescheduleImport(days) {
+      const progress = document.getElementById('reschedule-import-progress');
+      const result = document.getElementById('reschedule-import-result');
+      const btns = document.querySelectorAll('#calendly-reschedule-import-modal button.btn-secondary');
+      btns.forEach(b => b.disabled = true);
+      if (progress) progress.style.display = 'block';
+
+      try {
+        const session = await window.SupabaseClient.auth.getSession();
+        const token = session.data.session?.access_token;
+        let totalRescheduled = 0, totalSkipped = 0, totalErrors = 0;
+        let pageUrl = null, mappingIndex = 0, done = false;
+
+        while (!done) {
+          const body = { action: 'import_reschedule_calendar', days_back: days, page_url: pageUrl, mapping_index: mappingIndex };
+          const res = await fetch(`${window.SupabaseClient.supabaseUrl}/functions/v1/calendly-sync`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: res.statusText }));
+            throw new Error(err.error || `HTTP ${res.status}`);
+          }
+          const data = await res.json();
+          totalRescheduled += data.rescheduled || 0;
+          totalSkipped += data.skipped || 0;
+          totalErrors += data.errors || 0;
+          done = data.done;
+          pageUrl = data.next_page_url || null;
+          mappingIndex = data.next_mapping_index ?? mappingIndex;
+          if (progress) progress.textContent = `⏳ ${totalRescheduled} umgebucht · ${totalSkipped} übersprungen…`;
+        }
+
+        if (progress) progress.style.display = 'none';
+        if (result) {
+          result.style.display = 'block';
+          result.innerHTML = `
+            <div style="padding:1rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+              <div style="font-weight:600;color:#16a34a;margin-bottom:0.5rem;">✅ Import abgeschlossen</div>
+              <div>🔄 <strong>${totalRescheduled}</strong> Termine umgebucht</div>
+              <div style="color:#666;">⏭️ ${totalSkipped} übersprungen (bereits importiert)</div>
+              ${totalErrors > 0 ? `<div style="color:#ef4444;">⚠️ ${totalErrors} Fehler</div>` : ''}
+            </div>`;
+        }
+      } catch (err) {
+        console.error('❌ Reschedule import fehlgeschlagen:', err);
+        if (progress) progress.style.display = 'none';
+        if (result) {
+          result.style.display = 'block';
+          result.innerHTML = `
+            <div style="padding:1rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;">
+              <div style="font-weight:600;color:#ef4444;">❌ Import fehlgeschlagen</div>
+              <div style="font-size:0.85rem;color:#666;">${err.message}</div>
+            </div>`;
+        }
       }
     },
 

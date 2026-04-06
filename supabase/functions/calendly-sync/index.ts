@@ -398,6 +398,182 @@ Deno.serve(async (req) => {
       return jsonResponse({ imported, skipped, errors, done, next_page_url: nextPageUrl, next_mapping_index: nextMappingIndex, tracking_rows_saved: trackingRowsSaved, debug: debugLog });
     }
 
+    // ── Action: import_reschedule_calendar ───────────────────────────────────
+    // Like import_past_bookings but only for event types marked as reschedule calendar.
+    // Does NOT create new events (closingBooking). Instead links call_events via rescheduled_from_id.
+    if (action === 'import_reschedule_calendar') {
+      const daysBack: number = Math.min(Math.max(Number(body.days_back) || 90, 1), 730);
+      const resumePageUrl: string | null = body.page_url || null;
+      const mappingIndex: number = Number(body.mapping_index) || 0;
+
+      const { data: eventTypeMappings } = await supabase
+        .from('calendly_event_type_mappings')
+        .select('calendly_event_type_uri, calendly_event_type_name, clarity_event_type')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .eq('is_reschedule_calendar', true);
+
+      if (!eventTypeMappings?.length) {
+        return jsonError('Kein Reschedule-Kalender konfiguriert. Bitte zuerst einen Kalender als "Reschedule-Kalender" markieren.', 400);
+      }
+
+      const minStartTime = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+      const maxStartTime = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+
+      const mapping = eventTypeMappings[mappingIndex];
+      if (!mapping) return jsonResponse({ rescheduled: 0, skipped: 0, errors: 0, done: true });
+
+      const callType: string = mapping.clarity_event_type === 'settingBooking' ? 'setting' : 'closing';
+
+      let pageUrl: string;
+      if (resumePageUrl) {
+        pageUrl = resumePageUrl;
+      } else {
+        const u = new URL(`${CALENDLY_API_URL}/scheduled_events`);
+        u.searchParams.set('organization', conn.organization_uri);
+        u.searchParams.set('event_type', mapping.calendly_event_type_uri);
+        u.searchParams.set('count', '100');
+        u.searchParams.set('min_start_time', minStartTime);
+        u.searchParams.set('max_start_time', maxStartTime);
+        u.searchParams.set('sort', 'start_time:desc');
+        pageUrl = u.toString();
+      }
+
+      let rescheduled = 0, skipped = 0, errors = 0;
+      const debugLog: string[] = [`Reschedule import: ${mapping.calendly_event_type_name}`];
+
+      let eventsRes = await fetch(pageUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (eventsRes.status === 429) {
+        await new Promise(r => setTimeout(r, 10000));
+        eventsRes = await fetch(pageUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+      }
+      if (!eventsRes.ok) {
+        return jsonResponse({ rescheduled, skipped, errors, done: true, error: `Events fetch failed: ${eventsRes.status}` });
+      }
+
+      const eventsData = await eventsRes.json();
+      const allFetched: any[] = eventsData.collection || [];
+      const events: any[] = allFetched.filter((ev: any) => ev.event_type === mapping.calendly_event_type_uri);
+      const nextCalendlyPage: string | null = eventsData.pagination?.next_page || null;
+      debugLog.push(`  ${allFetched.length} fetched, ${events.length} match mapping`);
+
+      // Fetch invitees in batches of 30
+      const allInvitees: Array<{ invitee: any; scheduledEvent: any }> = [];
+      for (let i = 0; i < events.length; i += 30) {
+        const chunk = events.slice(i, i + 30);
+        await Promise.allSettled(chunk.map(async (scheduledEvent: any) => {
+          const eventUuid = scheduledEvent.uri.split('/').pop();
+          let r = await fetch(`${CALENDLY_API_URL}/scheduled_events/${eventUuid}/invitees?count=100`,
+            { headers: { Authorization: `Bearer ${accessToken}` } });
+          if (r.status === 429) {
+            await new Promise(res => setTimeout(res, 2000));
+            r = await fetch(`${CALENDLY_API_URL}/scheduled_events/${eventUuid}/invitees?count=100`,
+              { headers: { Authorization: `Bearer ${accessToken}` } });
+          }
+          if (!r.ok) return;
+          const d = await r.json();
+          for (const inv of (d.collection || [])) allInvitees.push({ invitee: inv, scheduledEvent });
+        }));
+        if (i + 30 < events.length) await new Promise(r => setTimeout(r, 300));
+      }
+      debugLog.push(`  Invitees: ${allInvitees.length}`);
+
+      // Bulk email pre-fetch
+      const emailList = [...new Set(allInvitees.map(i => (i.invitee.email || '').toLowerCase().trim()).filter(Boolean))];
+      const { data: existingLeadRows } = emailList.length
+        ? await supabase.from('leads').select('id, primary_email').eq('user_id', user.id).in('primary_email', emailList)
+        : { data: [] };
+      const leadEmailCache: Record<string, string> = {};
+      for (const l of existingLeadRows || []) leadEmailCache[l.primary_email] = l.id;
+
+      // Process invitees
+      for (let i = 0; i < allInvitees.length; i += 30) {
+        await Promise.all(allInvitees.slice(i, i + 30).map(async ({ invitee, scheduledEvent }) => {
+          // Idempotency
+          const { error: logError } = await supabase.from('calendly_events_log').insert({
+            invitee_uri: invitee.uri, calendly_event_uri: scheduledEvent.uri,
+            user_id: user.id, raw_payload: { invitee, event: scheduledEvent, import_type: 'reschedule' },
+          });
+          if (logError?.code === '23505') { skipped++; return; }
+          if (logError) { errors++; return; }
+
+          try {
+            const email = (invitee.email || '').toLowerCase().trim();
+            if (!email) { skipped++; return; }
+
+            // Find lead
+            let leadId: string | null = leadEmailCache[email] || null;
+            if (!leadId) {
+              const { data: l } = await supabase.from('leads').select('id').eq('user_id', user.id).eq('primary_email', email).maybeSingle();
+              if (l) { leadId = l.id; leadEmailCache[email] = l.id; }
+            }
+            if (!leadId) { skipped++; debugLog.push(`  ⚠️ No lead found for ${email}`); return; }
+
+            // Find most recent call_event to reschedule
+            const { data: oldCe } = await supabase.from('call_events')
+              .select('id, lead_email, funnel_id')
+              .eq('user_id', user.id).eq('lead_id', leadId).eq('call_type', callType)
+              .in('status', ['scheduled', 'canceled', 'rescheduled'])
+              .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+            const appointmentDate = scheduledEvent.start_time
+              ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(scheduledEvent.start_time))
+              : null;
+            const bookingDate = invitee.created_at
+              ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(invitee.created_at))
+              : null;
+
+            const { data: newCe, error: newCeErr } = await supabase.from('call_events').insert({
+              user_id: user.id, lead_id: leadId,
+              lead_email: oldCe?.lead_email || email,
+              funnel_id: oldCe?.funnel_id || null,
+              call_type: callType,
+              booking_date: bookingDate,
+              appointment_date: appointmentDate,
+              status: 'scheduled',
+              calendly_event_uri: scheduledEvent.uri,
+              calendly_invitee_uri: invitee.uri,
+              rescheduled_from_id: oldCe?.id || null,
+              source: 'calendly',
+            }).select('id').single();
+
+            if (newCeErr) { errors++; debugLog.push(`  ❌ ${email}: ${newCeErr.message}`); return; }
+
+            if (oldCe) {
+              await supabase.from('call_events')
+                .update({ status: 'rescheduled', rescheduled_to_id: newCe.id })
+                .eq('id', oldCe.id);
+            }
+
+            // Update log
+            await supabase.from('calendly_events_log')
+              .update({ user_id: user.id, invitee_email: email, lead_id: leadId, event_type: 'reschedule' })
+              .eq('invitee_uri', invitee.uri);
+
+            rescheduled++;
+          } catch (err) {
+            errors++;
+            debugLog.push(`  ❌ ${invitee.email}: ${err instanceof Error ? err.message : JSON.stringify(err)}`);
+          }
+        }));
+      }
+
+      let nextPageUrl: string | null = null;
+      let nextMappingIndex: number = mappingIndex;
+      let done = false;
+
+      if (nextCalendlyPage) {
+        nextPageUrl = nextCalendlyPage;
+      } else if (mappingIndex + 1 < eventTypeMappings.length) {
+        nextMappingIndex = mappingIndex + 1;
+      } else {
+        done = true;
+      }
+
+      console.log(`Reschedule import done: ${rescheduled} rescheduled, ${skipped} skipped, ${errors} errors, done=${done}`);
+      return jsonResponse({ rescheduled, skipped, errors, done, next_page_url: nextPageUrl, next_mapping_index: nextMappingIndex, debug: debugLog });
+    }
+
     return jsonError(`Unknown action: ${action}`, 400);
 
   } catch (error) {
