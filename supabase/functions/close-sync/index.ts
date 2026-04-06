@@ -518,6 +518,7 @@ async function handleHistoricalImport(supabase: any, userId: string, days: numbe
       const appointmentDate: string | null = call.date_created
         ? call.date_created.split('T')[0]
         : null;
+      const appointmentTimestamp: string | null = call.date_created || null;
 
       const { error } = await supabase.from('call_events').insert({
         user_id: userId,
@@ -525,6 +526,7 @@ async function handleHistoricalImport(supabase: any, userId: string, days: numbe
         call_type: callType,
         status: mapping.clarity_status,
         appointment_date: appointmentDate,
+        appointment_timestamp: appointmentTimestamp,
         close_lead_id: leadId,
         close_activity_id: call.id,
         assigned_to: assignedTo,

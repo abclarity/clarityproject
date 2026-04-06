@@ -204,7 +204,7 @@
         if (!scaleItView) {
           scaleItView = document.createElement('div');
           scaleItView.id = 'scaleItView';
-          scaleItView.style.cssText = 'flex: 1; overflow-y: auto; background: #f6f7f9;';
+          scaleItView.className = 'scaleit-view';
           document.body.appendChild(scaleItView);
         }
         scaleItView.style.display = 'block';
@@ -219,6 +219,9 @@
 
         const comingSoonView = document.getElementById('comingSoonView');
         if (comingSoonView) comingSoonView.style.display = 'none';
+
+        const scaleItView = document.getElementById('scaleItView');
+        if (scaleItView) scaleItView.style.display = 'none';
 
         let datapoolView = document.getElementById('datapoolView');
         if (!datapoolView) {

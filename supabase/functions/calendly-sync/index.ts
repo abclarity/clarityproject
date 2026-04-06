@@ -250,7 +250,8 @@ Deno.serve(async (req) => {
         .from('calendly_event_type_mappings')
         .select('calendly_event_type_uri, calendly_event_type_name, clarity_event_type')
         .eq('user_id', user.id)
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .neq('is_reschedule_calendar', true);
 
       if (!eventTypeMappings?.length) {
         return jsonError('Keine Event-Typen gemappt. Bitte zuerst Event-Typen zuordnen.', 400);

@@ -2752,20 +2752,30 @@
         if (ce.call_type === 'setting' && ce.status === 'showed') continue; // closingTermin covers this
         if (ce.status === 'rescheduled') continue; // covered by the new call_event's reschedule entry
 
-        const date = ce.appointment_date ? new Date(ce.appointment_date) : null;
+        const dateRaw = ce.appointment_timestamp || ce.appointment_date;
+        const date = dateRaw ? new Date(dateRaw) : null;
         if (!date) continue;
+        const hasTime = !!ce.appointment_timestamp;
+        const dateLabel = hasTime
+          ? date.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })
+          : date.toLocaleDateString('de-DE');
 
         // Reschedule entry (Option B): call_event that was created by a reschedule
         if (ce.rescheduled_from_id) {
+          // Use booking_date (when reschedule happened) as sort key, appointment_date as "→ target"
+          const bookingTs = ce.booking_date ? new Date(ce.booking_date).getTime() : date.getTime();
+          const bookingLabel = ce.booking_date
+            ? new Date(ce.booking_date).toLocaleDateString('de-DE')
+            : dateLabel;
           const html = `
             <div class="timeline-item" style="border-left:3px solid #f59e0b;padding-left:8px;">
-              <div class="timeline-date">${date.toLocaleDateString('de-DE')}</div>
+              <div class="timeline-date">${bookingLabel}</div>
               <div class="timeline-content">
                 <div class="timeline-label">🔄 Termin Umgebucht → ${date.toLocaleDateString('de-DE')}</div>
                 <div class="timeline-details">Calendly</div>
               </div>
             </div>`;
-          allItems.push({ ts: date.getTime(), html });
+          allItems.push({ ts: bookingTs, html });
           continue;
         }
 
@@ -2774,7 +2784,7 @@
         const detail = ce.assigned_to ? `Bearbeitet von: ${ce.assigned_to}` : 'Close.io';
         const html = `
           <div class="timeline-item" style="border-left:3px solid #e9ecef;padding-left:8px;">
-            <div class="timeline-date">${date.toLocaleDateString('de-DE')}</div>
+            <div class="timeline-date">${dateLabel}</div>
             <div class="timeline-content">
               <div class="timeline-label">${label}</div>
               <div class="timeline-details">${detail}</div>
@@ -3024,7 +3034,12 @@
         });
         const rows = sortedCalls.map(ce => {
           const cfg = (callStatusConfig[ce.status] || {})[ce.call_type] || { icon: '📞', label: `${ce.call_type} – ${ce.status}` };
-          const dateStr = ce.appointment_date ? new Date(ce.appointment_date).toLocaleDateString('de-DE') : '-';
+          const dateRaw2 = ce.appointment_timestamp || ce.appointment_date;
+          const dateStr = dateRaw2
+            ? (ce.appointment_timestamp
+                ? new Date(dateRaw2).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })
+                : new Date(dateRaw2).toLocaleDateString('de-DE'))
+            : '-';
           return `
             <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f0f0f0;">
               <span style="font-size:16px;">${cfg.icon}</span>

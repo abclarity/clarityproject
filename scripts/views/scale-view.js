@@ -10,6 +10,9 @@
   // Default section when navigating to Scale IT
   let activeSection = 'ads';
 
+  // Whether the Ads section is showing cards or the audit table
+  let adsMode = 'cards'; // 'cards' | 'audit'
+
   // ── Content definitions per section ──────────────────────────────────────
 
   const CONTENT = {
@@ -22,7 +25,8 @@
           icon: '📊',
           title: 'Ads Audit',
           desc: 'Welche Ads bringen die meisten Calls, Sales & ROAS? Ad-Level Auswertung auf einen Blick.',
-          badge: { label: 'Bald verfügbar', type: 'soon' },
+          badge: { label: 'Aktiv', type: 'active' },
+          action: 'audit',
         },
         {
           icon: '💰',
@@ -196,14 +200,19 @@
   }
 
   function renderCards(cards) {
-    return cards.map(card => `
-      <div class="scale-card">
-        <div class="scale-card-icon">${card.icon}</div>
-        <p class="scale-card-title">${card.title}</p>
-        <p class="scale-card-desc">${card.desc}</p>
-        ${renderBadge(card.badge)}
-      </div>
-    `).join('');
+    return cards.map(card => {
+      const actionAttr = card.action ? `data-action="${card.action}" style="cursor:pointer;"` : '';
+      const activeClass = card.action ? ' scale-card--actionable' : '';
+      return `
+        <div class="scale-card${activeClass}" ${actionAttr}>
+          <div class="scale-card-icon">${card.icon}</div>
+          <p class="scale-card-title">${card.title}</p>
+          <p class="scale-card-desc">${card.desc}</p>
+          ${renderBadge(card.badge)}
+          ${card.action ? '<p class="scale-card-cta">Öffnen →</p>' : ''}
+        </div>
+      `;
+    }).join('');
   }
 
   function renderSubnav(currentSection) {
@@ -215,8 +224,34 @@
     `).join('');
   }
 
+  function renderAdsContent() {
+    if (adsMode === 'audit') {
+      return `
+        <div class="scale-section active" data-section="ads">
+          <button class="scale-back-btn" id="adsAuditBack">← Zurück zur Übersicht</button>
+          <div id="adsAuditSection"></div>
+        </div>
+      `;
+    }
+    const data = CONTENT['ads'];
+    return `
+      <div class="scale-section active" data-section="ads">
+        <p class="scale-section-title">${data.title}</p>
+        <p class="scale-section-subtitle">${data.subtitle}</p>
+        <div class="scale-cards" id="adsCards">
+          ${renderCards(data.cards)}
+        </div>
+      </div>
+    `;
+  }
+
   function renderSections(currentSection) {
     return SECTIONS.map(s => {
+      if (s.id === 'ads') {
+        const isActive = currentSection === 'ads';
+        if (!isActive) return `<div class="scale-section" data-section="ads"></div>`;
+        return renderAdsContent();
+      }
       const data = CONTENT[s.id];
       const isActive = s.id === currentSection;
       return `
@@ -231,8 +266,23 @@
     }).join('');
   }
 
+  function attachAdsListeners(container, topContainer) {
+    const adsCards = document.getElementById('adsCards');
+    if (!adsCards) return;
+    adsCards.addEventListener('click', e => {
+      const card = e.target.closest('[data-action="audit"]');
+      if (!card) return;
+      // Hand the full top-level container to AdsAuditAPI so it goes full-width
+      if (window.AdsAuditAPI) {
+        window.AdsAuditAPI.render(topContainer);
+      }
+    });
+  }
+
   function render(section, container) {
     if (section) activeSection = section;
+    // Reset ads mode when re-rendering the whole view
+    adsMode = 'cards';
 
     if (!container) container = document.getElementById('app');
     if (!container) return;
@@ -252,6 +302,8 @@
       </div>
     `;
 
+    attachAdsListeners(container, container);
+
     // Sub-navigation click handler
     const subnav = document.getElementById('scaleSubnav');
     if (subnav) {
@@ -263,15 +315,28 @@
         if (section === activeSection) return;
 
         activeSection = section;
+        adsMode = 'cards';
 
         // Update active button
         subnav.querySelectorAll('.scale-subnav-btn').forEach(b => {
           b.classList.toggle('active', b.dataset.section === section);
         });
 
-        // Show correct section
+        // Re-render section content
         container.querySelectorAll('.scale-section').forEach(el => {
-          el.classList.toggle('active', el.dataset.section === section);
+          const isTarget = el.dataset.section === section;
+          el.classList.toggle('active', isTarget);
+          if (isTarget && section === 'ads') {
+            const data = CONTENT['ads'];
+            el.innerHTML = `
+              <p class="scale-section-title">${data.title}</p>
+              <p class="scale-section-subtitle">${data.subtitle}</p>
+              <div class="scale-cards" id="adsCards">
+                ${renderCards(data.cards)}
+              </div>
+            `;
+            attachAdsListeners(container, container);
+          }
         });
       });
     }
