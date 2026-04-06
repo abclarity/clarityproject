@@ -23,7 +23,7 @@
     'Leads': '📩 Leads', 'Survey': '📋 Survey', 'SurveyQuali': '✅ Survey Quali',
     'SettingBooking': '📅 Setting Booking', 'SettingTermin': '🎯 Setting Termin',
     'SettingCall': '📞 Setting Call', 'ClosingBooking': '📅 Closing Booking',
-    'ClosingTermin': '🎯 Closing Termin', 'ClosingCall': '📞 Closing Call',
+    'ClosingTermin': '✅ Closing Termin', 'ClosingCall': '📞 Closing Call',
     'Units': '💰 Units',
   };
 

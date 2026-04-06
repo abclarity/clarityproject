@@ -10,7 +10,7 @@
     { id: 'settingTermin', label: 'Setting Termin', icon: '📆' },
     { id: 'settingCall', label: 'Setting Call', icon: '☎️' },
     { id: 'closingBooking', label: 'Closing Booking', icon: '🥇' },
-    { id: 'closingTermin', label: 'Closing Termin', icon: '🎯' },
+    { id: 'closingTermin', label: 'Closing Termin', icon: '✅' },
     { id: 'closingCall', label: 'Closing Call', icon: '📞' },
     { id: 'unit', label: 'Units', icon: '💰' }
   ];
@@ -1628,7 +1628,7 @@
         'settingTermin': '📆',
         'settingCall': '☎️',
         'closingBooking': '🥇',
-        'closingTermin': '🎯',
+        'closingTermin': '✅',
         'closingCall': '📞',
         'unit': '💰'
       };
@@ -2632,7 +2632,11 @@
             <div id="journeyTab" class="lead-tab-content active">
               <div class="lead-detail-info">
                 <div class="info-group">
-                  <strong>E-Mail:</strong> ${lead.primary_email || '-'}
+                  <strong>E-Mail:</strong>
+                  <span style="display:inline-flex;align-items:center;gap:6px;">
+                    ${lead.primary_email || '-'}
+                    ${lead.primary_email ? `<button onclick="navigator.clipboard.writeText('${lead.primary_email}').then(()=>{this.textContent='✓';setTimeout(()=>this.textContent='⎘',1500)})" title="E-Mail kopieren" style="background:none;border:none;cursor:pointer;font-size:17px;padding:0 2px;color:#888;line-height:1;">⎘</button>` : ''}
+                  </span>
                 </div>
                 <div class="info-group">
                   <strong>Telefon:</strong> ${lead.primary_phone || '-'}
@@ -2713,7 +2717,7 @@
         settingTermin: '📆 Setting Termin',
         settingCall: '☎️ Setting Call',
         closingBooking: '🥇 Closing Booking',
-        closingTermin: '🎯 Closing Termin',
+        closingTermin: '✅ Closing Termin',
         closingCall: '📞 Closing Call',
         unit: '💰 Unit'
       };
@@ -2930,7 +2934,7 @@
 
       const eventLabels = {
         closingBooking: { icon: '🥇', label: 'Closing Call gebucht' },
-        closingTermin:  { icon: '🎯', label: 'Closing Termin bestätigt' },
+        closingTermin:  { icon: '✅', label: 'Closing Termin bestätigt' },
         closingCall:    { icon: '📞', label: 'Closing Call' }
       };
 

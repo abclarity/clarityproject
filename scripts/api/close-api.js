@@ -123,7 +123,7 @@
 
           <!-- Closing Termine sync -->
           <div style="background:#f8f9fa;border:1px solid #e9ecef;border-radius:8px;padding:14px;">
-            <div style="font-size:13px;font-weight:600;margin-bottom:4px;">🎯 Closing Termine anlegen</div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:4px;">✅ Closing Termine anlegen</div>
             <div style="font-size:12px;color:#666;margin-bottom:10px;">
               Legt für alle qualifizierten Setting Calls (Setter hat Lead qualifiziert) einen Closing Termin im Datenpool an.
             </div>

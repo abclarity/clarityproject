@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
     // For now we find the user by looking up their event type mappings.
     const { data: eventTypeMapping } = await supabase
       .from('calendly_event_type_mappings')
-      .select('user_id, clarity_event_type')
+      .select('user_id, clarity_event_type, is_reschedule_calendar')
       .eq('calendly_event_type_uri', eventTypeUri)
       .eq('is_active', true)
       .maybeSingle();
@@ -101,6 +101,7 @@ Deno.serve(async (req) => {
     const userId: string = eventTypeMapping.user_id;
     const clarityEventType: string = eventTypeMapping.clarity_event_type;
     const callType: string = clarityEventType === 'settingBooking' ? 'setting' : 'closing';
+    const isRescheduleCalendar: boolean = eventTypeMapping.is_reschedule_calendar === true;
 
     // Determine funnel from UTM mapping
     const utmCampaign: string | null = tracking?.utm_campaign || null;
@@ -326,6 +327,72 @@ Deno.serve(async (req) => {
       if (leadError) throw leadError;
       leadId = newLead.id;
       console.log('Created new lead from Calendly booking:', leadId);
+    }
+
+    // ── Reschedule Calendar: update appointment_date only, no new booking event ──
+    if (isRescheduleCalendar) {
+      console.log('📅 Reschedule calendar — no new booking event, updating call_event only');
+
+      // Find the most recent call_event for this lead with matching call_type
+      const { data: oldCallEvent } = await supabase
+        .from('call_events')
+        .select('id, funnel_id, lead_email')
+        .eq('user_id', userId)
+        .eq('lead_id', leadId)
+        .eq('call_type', callType)
+        .in('status', ['scheduled', 'rescheduled', 'canceled'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (oldCallEvent) {
+        // Mark old call_event as rescheduled
+        const { data: newCallEvent, error: newCeError } = await supabase
+          .from('call_events')
+          .insert({
+            user_id: userId,
+            lead_id: leadId,
+            lead_email: oldCallEvent.lead_email || email,
+            funnel_id: oldCallEvent.funnel_id || funnelId,
+            call_type: callType,
+            booking_date: bookingDate,
+            appointment_date: appointmentDate,
+            status: 'scheduled',
+            calendly_event_uri: calendlyEventUri,
+            calendly_invitee_uri: inviteeUri,
+            rescheduled_from_id: oldCallEvent.id,
+            source: 'calendly',
+          })
+          .select('id')
+          .single();
+
+        if (!newCeError && newCallEvent) {
+          await supabase
+            .from('call_events')
+            .update({ status: 'rescheduled', rescheduled_to_id: newCallEvent.id })
+            .eq('id', oldCallEvent.id);
+          console.log(`✅ Reschedule: old call_event ${oldCallEvent.id} → new ${newCallEvent.id}, appointment: ${appointmentDate}`);
+        } else if (newCeError) {
+          console.error('❌ Failed to create rescheduled call_event:', newCeError);
+        }
+      } else {
+        console.log('⚠️ No existing call_event found for reschedule — creating fresh one');
+        await supabase.from('call_events').insert({
+          user_id: userId, lead_id: leadId, lead_email: email, funnel_id: funnelId,
+          call_type: callType, booking_date: bookingDate, appointment_date: appointmentDate,
+          status: 'scheduled', calendly_event_uri: calendlyEventUri,
+          calendly_invitee_uri: inviteeUri, source: 'calendly',
+        });
+      }
+
+      // Log for idempotency
+      if (logEntryId) {
+        await supabase.from('calendly_events_log')
+          .update({ user_id: userId, invitee_email: email, lead_id: leadId, event_type: clarityEventType })
+          .eq('id', logEntryId);
+      }
+
+      return jsonResponse({ success: true, action: 'rescheduled', lead_id: leadId, appointment_date: appointmentDate });
     }
 
     // ── Create Event (existing events table — tracks Booking count) ───────────

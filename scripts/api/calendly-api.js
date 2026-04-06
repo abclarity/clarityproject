@@ -187,17 +187,22 @@
       const rows = eventTypes.map(et => {
         const currentMapping = this.eventTypeMappings.find(m => m.calendly_event_type_uri === et.uri);
         const selected = currentMapping?.clarity_event_type || '';
+        const isReschedule = currentMapping?.is_reschedule_calendar || false;
         return `
-          <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 0.5rem;">
-            <div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:0.75rem;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:0.5rem;gap:12px;">
+            <div style="flex:1;min-width:0;">
               <strong>${et.name}</strong>
-              <div style="font-size: 0.8rem; color: var(--gray-600);">${et.duration} Min · ${et.kind}</div>
+              <div style="font-size:0.8rem;color:var(--gray-600);">${et.duration} Min · ${et.kind}</div>
             </div>
-            <select data-uri="${et.uri}" data-name="${et.name.replace(/"/g, '&quot;')}" style="padding: 0.4rem 0.6rem; border: 1px solid #d1d5db; border-radius: 4px;">
+            <select data-uri="${et.uri}" data-name="${et.name.replace(/"/g, '&quot;')}" style="padding:0.4rem 0.6rem;border:1px solid #d1d5db;border-radius:4px;">
               <option value="">– Nicht mappen –</option>
               <option value="settingBooking" ${selected === 'settingBooking' ? 'selected' : ''}>Setting Booking</option>
               <option value="closingBooking" ${selected === 'closingBooking' ? 'selected' : ''}>Closing Booking</option>
             </select>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#666;white-space:nowrap;cursor:pointer;">
+              <input type="checkbox" data-reschedule-uri="${et.uri}" ${isReschedule ? 'checked' : ''} style="cursor:pointer;">
+              Reschedule-Kalender
+            </label>
           </div>
         `;
       }).join('');
@@ -237,6 +242,8 @@
           const uri = sel.dataset.uri;
           const name = sel.dataset.name;
           const clarityType = sel.value;
+          const rescheduleCheckbox = document.querySelector(`[data-reschedule-uri="${uri}"]`);
+          const isReschedule = rescheduleCheckbox?.checked || false;
 
           if (clarityType) {
             upserts.push({
@@ -245,6 +252,7 @@
               calendly_event_type_name: name,
               clarity_event_type: clarityType,
               is_active: true,
+              is_reschedule_calendar: isReschedule,
             });
           } else {
             toDelete.push(uri);
